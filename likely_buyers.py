@@ -7,6 +7,15 @@ import numpy as np
 from sklearn.base import TransformerMixin
 from sklearn.compose import ColumnTransformer
 
+class PreviousBookings(TransformerMixin):
+
+    def transform(self, X, **transform_params):
+        hours = DataFrame(X['datetime'].apply(lambda x: x.hour))
+        return hours
+
+    def fit(self, X, y=None, **fit_params):
+        return self
+
 class PropensityEstimator:
 
 	def __init__(self):
@@ -28,11 +37,3 @@ if __name__ == '__main__':
 
 	print(pe.d) 
 
-# class HourOfDayTransformer(TransformerMixin):
-
-#     def transform(self, X, **transform_params):
-#         hours = DataFrame(X['datetime'].apply(lambda x: x.hour))
-#         return hours
-
-#     def fit(self, X, y=None, **fit_params):
-#         return self
