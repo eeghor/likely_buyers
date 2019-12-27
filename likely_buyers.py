@@ -10,7 +10,7 @@ from sklearn.compose import ColumnTransformer
 class PreviousBookings(TransformerMixin):
 
     def transform(self, X, **transform_params):
-        hours = DataFrame(X['datetime'].apply(lambda x: x.hour))
+        X.sort_values(['CustomerId', 'CreatedOn'])
         return hours
 
     def fit(self, X, y=None, **fit_params):
