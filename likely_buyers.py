@@ -26,7 +26,7 @@ class PreviousBookings(TransformerMixin):
 			prevs.append(r[1].cumsum().shift(1, fill_value=0)[['isBooking', 'isQuote']] \
 				 .rename(columns={'isBooking': 'prev_bks', 'isQuote': 'prev_qts'}))
 
-		return pd.concat(prevs)
+		return X.join(pd.concat(prevs), how='inner')[['prev_bks', 'prev_qts']]
 
 	def fit(self, X, y=None, **kwargs):
 		return self
