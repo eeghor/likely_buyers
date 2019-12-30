@@ -201,22 +201,33 @@ class PreviousBookingsSameTrip(TransformerMixin):
 				if not prev_actv_this_country.empty:
  
 					prev_bks_this_country = max(sum([arrow.get(c).shift(days=-2) <= arrow.get(this_day) <= arrow.get(c).shift(days=+2) 
-															for c in prev_actv_this_country[prev_actv_this_country['Type'] == 'Booking']['FromDate']]),
-										sum([arrow.get(c).shift(days=-2) <= arrow.get(this_day) <= arrow.get(c).shift(days=+2) 
-															for c in prev_actv_this_country[prev_actv_this_country['Type'] == 'Booking']['ToDate']]))
+															for c in prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote']['FromDate']]),
+												sum([arrow.get(c).shift(days=-2) <= arrow.get(this_day) <= arrow.get(c).shift(days=+2) 
+															for c in prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote']['ToDate']]))
 
 				else:
-					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
+					prev_bks_this_country = 0
 
 				prev_bks.append(prev_bks_this_country)
-				prev_qts.append(prev_qts_this_country)
-				prev_cnl.append(prev_cnl_this_country)
 
-			prevs.append(pd.DataFrame({'prev_bks_same_day': prev_bks,
-							'prev_qts_same_day': prev_qts,
-							'prev_cnl__same_day': prev_cnl}).set_index(d.index))
+			prevs.append(pd.DataFrame({'prev_qts_same_trip': prev_bks}).set_index(d.index))
 
 		return pd.concat(prevs)
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class CatFeatures(TransformerMixin):
+
+	"""
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		fs = 'FromDayWeek ToDayWeek QuoteWeek QuoteDay QuoteHour Lang ResCountry'.split()
+
+		return pd.get_dummies(X[fs], prefix='is')
 
 	def fit(self, X, y=None, **kwargs):
 		return self
@@ -240,7 +251,7 @@ if __name__ == '__main__':
 	
 	pe = PropensityEstimator().load_data()
 
-	pl = PreviousBookingsSameDay().transform(pe.d, what='week')
+	pl = CatFeatures().transform(pe.d)
 
 	print(pl)
 
