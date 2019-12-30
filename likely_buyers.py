@@ -15,18 +15,114 @@ class PreviousBookings(TransformerMixin):
 
 	def transform(self, X, **kwargs):
 
-		X_ = X[['CustomerId', 'Type', 'BookingId', 'CreatedOn']].sort_values(['CustomerId', 'CreatedOn'])
+		X_ = X[['CustomerId', 'Type', 'BookingId', 'CreatedOn', 'Cancelled']].sort_values(['CustomerId', 'CreatedOn'])
 		X_['isBooking'] = X_['Type'].apply(lambda x: 1 if x == 'Booking' else 0)
 		X_['isQuote'] = X_['isBooking'].apply(lambda x: 0 if x == 1 else 1)
 
 		prevs = []
 
-		for r in X_[['CustomerId', 'isBooking', 'isQuote']].groupby('CustomerId'):
+		for r in X_[['CustomerId', 'isBooking', 'isQuote', 'Cancelled']].groupby('CustomerId'):
 			
-			prevs.append(r[1].cumsum().shift(1, fill_value=0)[['isBooking', 'isQuote']] \
-				 .rename(columns={'isBooking': 'prev_bks', 'isQuote': 'prev_qts'}))
+			prevs.append(r[1].cumsum().shift(1, fill_value=0)[['isBooking', 'isQuote', 'Cancelled']] \
+				 .rename(columns={'isBooking': 'prev_bks', 'isQuote': 'prev_qts', 'Cancelled': 'prev_cnl'}))
 
-		return X.join(pd.concat(prevs), how='inner')[['prev_bks', 'prev_qts']]
+		return X.join(pd.concat(prevs), how='inner')[['prev_bks', 'prev_qts', 'prev_cnl']]
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class PreviousBookingsSameCountry(TransformerMixin):
+
+	"""
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		prevs = []
+
+		for r in X.groupby('CustomerId'):
+
+			d = r[1].sort_values('CreatedOn')
+
+			prev_bks = []
+			prev_qts = []
+			prev_cnl = []
+			
+			for i, cr in enumerate(d.iterrows()):
+
+				this_country = cr[1]['ToCountry']
+
+				prev_acts = d.iloc[:i]
+
+				prev_actv_this_country = prev_acts[prev_acts['ToCountry'] == this_country]
+
+				if not prev_actv_this_country.empty:
+
+					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Booking'])
+					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote'])
+					prev_cnl_this_country = len(prev_actv_this_country[prev_actv_this_country['Cancelled'] == 1])
+				else:
+					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
+
+				prev_bks.append(prev_bks_this_country)
+				prev_qts.append(prev_qts_this_country)
+				prev_cnl.append(prev_cnl_this_country)
+
+			prevs.append(pd.DataFrame({'prev_bks_this_country': prev_bks,
+							'prev_qts_this_country': prev_qts,
+							'prev_cnl_this_country': prev_cnl}).set_index(d.index))
+
+		return pd.concat(prevs)
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class PreviousBookingsThisWeek(TransformerMixin):
+
+	"""
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		prevs = [] 
+
+		w = 'QuoteWeek' if kwargs['what'] == 'week' else 'QuoteDay'
+
+		for r in X.groupby('CustomerId'):
+
+			d = r[1].sort_values('CreatedOn')
+
+			prev_bks = []
+			prev_qts = []
+			prev_cnl = []
+			
+			for i, cr in enumerate(d.iterrows()):
+
+				this_week = cr[1][w]
+
+				prev_acts = d.iloc[:i]
+
+				prev_actv_this_country = prev_acts[prev_acts[w] == this_week]
+
+				if not prev_actv_this_country.empty:
+
+					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Booking'])
+					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote'])
+
+				else:
+					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
+
+				prev_bks.append(prev_bks_this_country)
+				prev_qts.append(prev_qts_this_country)
+				prev_cnl.append(prev_cnl_this_country)
+
+			prevs.append(pd.DataFrame({'prev_bks_this_' + kwargs['what']: prev_bks,
+							'prev_qts_this_' + kwargs['what']: prev_qts,
+							'prev_cnl_this_' + kwargs['what']: prev_cnl}).set_index(d.index))
+
+		return pd.concat(prevs)
 
 	def fit(self, X, y=None, **kwargs):
 		return self
@@ -50,7 +146,7 @@ if __name__ == '__main__':
 	
 	pe = PropensityEstimator().load_data()
 
-	pl = PreviousBookings().transform(pe.d)
+	pl = PreviousBookingsThisWeek().transform(pe.d, what='week')
 
 	print(pl)
 
