@@ -7,10 +7,7 @@ import numpy as np
 from sklearn.base import TransformerMixin
 from sklearn.compose import ColumnTransformer
 
-"""
-asis_features = ['QuoteWeek', 'QuoteDay', 'QuoteHour', 'Paid', 'Coupon', , 'Lang', 'ResCountry']
-"""
-class PreviousBookings(TransformerMixin):
+class PrevActivityCounts(TransformerMixin):
 
 	"""
 	extract total previous bookings for each customers (for every booking or transaction)
@@ -60,6 +57,52 @@ class TripDetails(TransformerMixin):
 				pd.get_dummies(X['FromDayWeek'], prefix='from'),
 				pd.get_dummies(X['ToDayWeek'], prefix='to'),
 				X[['DurationDays', 'UpfrontDays', 'Cancelled']]], sort=False, axis=1)
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class CustomerDetails(TransformerMixin):
+
+	"""
+	 'Lang', 'ResCountry'
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		return pd.concat([
+				pd.get_dummies(X['ResCountry'], prefix='rc'),
+				pd.get_dummies(X['Lang'], prefix='ws_lang')], sort=False, axis=1)
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class Payment(TransformerMixin):
+
+	"""
+	 'Lang', 'ResCountry'
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		return X[['Paid', 'Coupon']]
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class QuoteTiming(TransformerMixin):
+
+	"""
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		return pd.concat([
+				pd.get_dummies(X['QuoteWeek'], prefix='qwk'),
+				pd.get_dummies(X['QuoteDay'], prefix='qd'),
+				pd.get_dummies(X['QuoteHour'], prefix='qh')], sort=False, axis=1)
 
 	def fit(self, X, y=None, **kwargs):
 		return self
@@ -284,7 +327,7 @@ if __name__ == '__main__':
 	
 	pe = PropensityEstimator().load_data()
 
-	pl = TripDetails().transform(pe.d)
+	pl = Payment().transform(pe.d)
 
 	print(pl)
 
