@@ -7,6 +7,9 @@ import numpy as np
 from sklearn.base import TransformerMixin
 from sklearn.compose import ColumnTransformer
 
+"""
+asis_features = ['QuoteWeek', 'QuoteDay', 'QuoteHour', 'Paid', 'Coupon', , 'Lang', 'ResCountry']
+"""
 class PreviousBookings(TransformerMixin):
 
 	"""
@@ -27,6 +30,36 @@ class PreviousBookings(TransformerMixin):
 				 .rename(columns={'isBooking': 'prev_bks', 'isQuote': 'prev_qts', 'Cancelled': 'prev_cnl'}))
 
 		return X.join(pd.concat(prevs), how='inner')[['prev_bks', 'prev_qts', 'prev_cnl']]
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class VehicleType(TransformerMixin):
+
+	"""
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		return X[['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']]
+
+	def fit(self, X, y=None, **kwargs):
+		return self
+
+class TripDetails(TransformerMixin):
+
+	"""
+	extract total previous bookings for each customers (for every booking or transaction)
+	"""
+
+	def transform(self, X, **kwargs):
+
+		return pd.concat([
+				pd.get_dummies(X['ToCountry'], prefix='to'),
+				pd.get_dummies(X['FromDayWeek'], prefix='from'),
+				pd.get_dummies(X['ToDayWeek'], prefix='to'),
+				X[['DurationDays', 'UpfrontDays', 'Cancelled']]], sort=False, axis=1)
 
 	def fit(self, X, y=None, **kwargs):
 		return self
@@ -251,7 +284,7 @@ if __name__ == '__main__':
 	
 	pe = PropensityEstimator().load_data()
 
-	pl = CatFeatures().transform(pe.d)
+	pl = TripDetails().transform(pe.d)
 
 	print(pl)
 
