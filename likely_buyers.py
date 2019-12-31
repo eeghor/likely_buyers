@@ -1,4 +1,5 @@
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.decomposition import PCA
 import pandas as pd
 from collections import Counter, defaultdict
 import arrow
@@ -10,13 +11,13 @@ from sklearn.compose import ColumnTransformer
 class PrevActivityCounts(TransformerMixin):
 
 	"""
-	extract total previous bookings for each customers (for every booking or transaction)
+	extract total previous bookings, quotes and cancellations for each customers and for every booking or quote
 	"""
 
 	def transform(self, X, **kwargs):
 
-		X_ = X[['CustomerId', 'Type', 'BookingId', 'CreatedOn', 'Cancelled']].sort_values(['CustomerId', 'CreatedOn'])
-		X_['isBooking'] = X_['Type'].apply(lambda x: 1 if x == 'Booking' else 0)
+		X_ = X[['CustomerId', 'BookingId', 'CreatedOn', 'Cancelled', 'isBooking']].sort_values(['CustomerId', 'CreatedOn'])
+		# X_['isBooking'] = X_['Type'].apply(lambda x: 1 if x == 'Booking' else 0)
 		X_['isQuote'] = X_['isBooking'].apply(lambda x: 0 if x == 1 else 1)
 
 		prevs = []
@@ -64,7 +65,6 @@ class TripDetails(TransformerMixin):
 class CustomerDetails(TransformerMixin):
 
 	"""
-	 'Lang', 'ResCountry'
 	extract total previous bookings for each customers (for every booking or transaction)
 	"""
 
@@ -80,7 +80,6 @@ class CustomerDetails(TransformerMixin):
 class Payment(TransformerMixin):
 
 	"""
-	 'Lang', 'ResCountry'
 	extract total previous bookings for each customers (for every booking or transaction)
 	"""
 
@@ -135,8 +134,8 @@ class PreviousBookingsSameCountry(TransformerMixin):
 
 				if not prev_actv_this_country.empty:
 
-					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Booking'])
-					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote'])
+					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 1])
+					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 0])
 					prev_cnl_this_country = len(prev_actv_this_country[prev_actv_this_country['Cancelled'] == 1])
 				else:
 					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
@@ -162,43 +161,44 @@ class PreviousBookingsThisWeek(TransformerMixin):
 
 	def transform(self, X, **kwargs):
 
-		prevs = [] 
+		prevs1 = [] 
+		prevs2 = []
 
-		w = 'QuoteWeek' if kwargs['what'] == 'week' else 'QuoteDay'
+		for p, w in zip([prevs1, prevs2], ['QuoteWeek', 'QuoteDay']):
 
-		for r in X.groupby('CustomerId'):
+			for r in X.groupby('CustomerId'):
 
-			d = r[1].sort_values('CreatedOn')
+				d = r[1].sort_values('CreatedOn')
 
-			prev_bks = []
-			prev_qts = []
-			prev_cnl = []
+				prev_bks = []
+				prev_qts = []
+				prev_cnl = []
 			
-			for i, cr in enumerate(d.iterrows()):
+				for i, cr in enumerate(d.iterrows()):
 
-				this_week = cr[1][w]
+					this_week = cr[1][w]
 
-				prev_acts = d.iloc[:i]
+					prev_acts = d.iloc[:i]
 
-				prev_actv_this_country = prev_acts[prev_acts[w] == this_week]
+					prev_actv_this_country = prev_acts[prev_acts[w] == this_week]
 
-				if not prev_actv_this_country.empty:
+					if not prev_actv_this_country.empty:
 
-					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Booking'])
-					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote'])
+						prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 1])
+						prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 0])
 
-				else:
-					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
+					else:
+						prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
 
-				prev_bks.append(prev_bks_this_country)
-				prev_qts.append(prev_qts_this_country)
-				prev_cnl.append(prev_cnl_this_country)
+					prev_bks.append(prev_bks_this_country)
+					prev_qts.append(prev_qts_this_country)
+					prev_cnl.append(prev_cnl_this_country)
 
-			prevs.append(pd.DataFrame({'prev_bks_this_' + kwargs['what']: prev_bks,
-							'prev_qts_this_' + kwargs['what']: prev_qts,
-							'prev_cnl_this_' + kwargs['what']: prev_cnl}).set_index(d.index))
+				p.append(pd.DataFrame({'prev_bks_this_' + w: prev_bks,
+							'prev_qts_this_' + w: prev_qts,
+							'prev_cnl_this_' + w: prev_cnl}).set_index(d.index))
 
-		return pd.concat(prevs)
+		return pd.concat([pd.concat(prevs1), pd.concat(prevs2)], axis=1)
 
 	def fit(self, X, y=None, **kwargs):
 		return self
@@ -231,8 +231,8 @@ class PreviousBookingsSameDay(TransformerMixin):
 
 				if not prev_actv_this_country.empty:
 
-					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Booking'])
-					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote'])
+					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 1])
+					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 0])
 
 				else:
 					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
@@ -250,7 +250,7 @@ class PreviousBookingsSameDay(TransformerMixin):
 	def fit(self, X, y=None, **kwargs):
 		return self
 
-class PreviousBookingsSameTrip(TransformerMixin):
+class PrevQtsThisTrip(TransformerMixin):
 
 	"""
 	extract total previous bookings for each customers (for every booking or transaction)
@@ -277,9 +277,9 @@ class PreviousBookingsSameTrip(TransformerMixin):
 				if not prev_actv_this_country.empty:
  
 					prev_bks_this_country = max(sum([arrow.get(c).shift(days=-2) <= arrow.get(this_day) <= arrow.get(c).shift(days=+2) 
-															for c in prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote']['FromDate']]),
+															for c in prev_actv_this_country[prev_actv_this_country['isBooking'] == 1]['FromDate']]),
 												sum([arrow.get(c).shift(days=-2) <= arrow.get(this_day) <= arrow.get(c).shift(days=+2) 
-															for c in prev_actv_this_country[prev_actv_this_country['Type'] == 'Quote']['ToDate']]))
+															for c in prev_actv_this_country[prev_actv_this_country['isBooking'] == 1]['ToDate']]))
 
 				else:
 					prev_bks_this_country = 0
@@ -293,31 +293,18 @@ class PreviousBookingsSameTrip(TransformerMixin):
 	def fit(self, X, y=None, **kwargs):
 		return self
 
-class CatFeatures(TransformerMixin):
-
-	"""
-	extract total previous bookings for each customers (for every booking or transaction)
-	"""
-
-	def transform(self, X, **kwargs):
-
-		fs = 'FromDayWeek ToDayWeek QuoteWeek QuoteDay QuoteHour Lang ResCountry'.split()
-
-		return pd.get_dummies(X[fs], prefix='is')
-
-	def fit(self, X, y=None, **kwargs):
-		return self
-
 class PropensityEstimator:
 
 	def __init__(self):
 		
 		self.vars = {'cat': 'FromDayWeek ToDayWeek QuoteWeek QuoteDay QuoteHour Lang ResCountry'.split()}
 
-	def load_data(self, tr_file='B2C_Rentalcover_24DEC2019.csv'):
+	def load_data(self, tr_file='B2C_Rentalcover_31DEC2019.csv'):
 
 		self.d = pd.read_csv('data/' + tr_file, 
 					parse_dates=['FromDate','ToDate','CreatedOn', 'CreatedOnDate'])
+
+		print(f'{self.d["CustomerId"].nunique():,} customer ids')
 
 		# print(pd.get_dummies(self.d.iloc[:30][self.vars['cat']], prefix='is'))
 
@@ -327,7 +314,16 @@ if __name__ == '__main__':
 	
 	pe = PropensityEstimator().load_data()
 
-	pl = Payment().transform(pe.d)
+	features = FeatureUnion([('prev_activity_counts', PrevActivityCounts()), 
+							 ('vehicle_type', VehicleType()),
+							 ('trip_details', TripDetails()), 
+							 ('customer_details', CustomerDetails()), 
+							 ('payment', Payment()), 
+							 ('quote_timing', QuoteTiming()), 
+							 ('prev_activities_same_country', PreviousBookingsSameCountry()), 
+							 ('prev_bks_this_week', PreviousBookingsThisWeek()), 
+							 ('prev_bks_this_day', PreviousBookingsSameDay()), 
+							 ('prev_qts_this_trip', PrevQtsThisTrip())])
 
-	print(pl)
+	print(features.fit_transform(pe.d))
 
