@@ -1,5 +1,8 @@
-from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.pipeline import Pipeline, FeatureUnion, make_pipeline
 from sklearn.decomposition import PCA
+from  sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import GridSearchCV
 import pandas as pd
 from collections import Counter, defaultdict
 import arrow
@@ -325,5 +328,5 @@ if __name__ == '__main__':
 							 ('prev_bks_this_day', PreviousBookingsSameDay()), 
 							 ('prev_qts_this_trip', PrevQtsThisTrip())])
 
-	print(features.fit_transform(pe.d))
+	pd.DataFrame(features.fit_transform(pe.d)).to_csv('fts.csv', index=False)
 
