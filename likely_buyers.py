@@ -2,9 +2,10 @@ from sklearn.pipeline import Pipeline, FeatureUnion, make_pipeline
 from sklearn.decomposition import PCA
 from  sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, train_test_split
 import pandas as pd
 from collections import Counter, defaultdict
+from sklearn.preprocessing import StandardScaler
 import arrow
 import numpy as np
 
@@ -308,6 +309,8 @@ class PropensityEstimator:
 					parse_dates=['FromDate','ToDate','CreatedOn', 'CreatedOnDate'])
 
 		print(f'{self.d["CustomerId"].nunique():,} customer ids')
+		print(f'{len(self.d[self.d["isBooking"] == 1]):,} bookings')
+		print(f'{len(self.d[self.d["isBooking"] == 0]):,} quotes')
 
 		# print(pd.get_dummies(self.d.iloc[:30][self.vars['cat']], prefix='is'))
 
