@@ -25,6 +25,7 @@ class PrevActivityCounts(TransformerMixin):
 		X_['isQuote'] = X_['isBooking'].apply(lambda x: 0 if x == 1 else 1)
 
 		prevs = []
+		
 
 		for r in X_[['CustomerId', 'isBooking', 'isQuote', 'Cancelled']].groupby('CustomerId'):
 			
