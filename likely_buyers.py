@@ -1,7 +1,7 @@
 from sklearn.pipeline import Pipeline, FeatureUnion, make_pipeline
 from sklearn.decomposition import PCA
 from  sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import GridSearchCV, train_test_split
 import pandas as pd
 from collections import Counter, defaultdict
@@ -39,7 +39,7 @@ class TripDetails(TransformerMixin):
 		tr_details_cat = 'ToCountry FromDayWeek ToDayWeek'.split()
 		tr_details_asis = 'DurationDays UpfrontDays Cancelled'.split()
 
-		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in tr_details_cat].append(X[tr_details_asis]),
+		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in tr_details_cat] + [X[tr_details_asis]],
 			sort=False, axis=1)
 
 	def fit(self, X, y=None):
@@ -48,189 +48,48 @@ class TripDetails(TransformerMixin):
 class CustomerDetails(TransformerMixin):
 
 	"""
-	extract total previous bookings for each customers (for every booking or transaction)
+	basic customer details
 	"""
 
-	def transform(self, X, **kwargs):
+	def transform(self, X):
 
-		return pd.concat([
-				pd.get_dummies(X['ResCountry'], prefix='rc'),
-				pd.get_dummies(X['Lang'], prefix='ws_lang')], sort=False, axis=1)
+		cus_details_cols = 'ResCountry Lang'.split()
 
-	def fit(self, X, y=None, **kwargs):
+		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cus_details_cols], 
+			sort=False, axis=1)
+
+	def fit(self, X, y=None):
 		return self
 
-class Payment(TransformerMixin):
+class PaymentDetails(TransformerMixin):
 
 	"""
-	extract total previous bookings for each customers (for every booking or transaction)
+	potential or actual payment related: how much in USD was the quote, was there the permanent coupon
 	"""
 
-	def transform(self, X, **kwargs):
+	def transform(self, X):
 
-		return X[['Paid', 'Coupon']]
+		paym_cols = 'Paid Coupon'.split()
 
-	def fit(self, X, y=None, **kwargs):
+		return X[paym_cols]
+
+	def fit(self, X, y=None):
 		return self
 
 class QuoteTiming(TransformerMixin):
 
 	"""
-	extract total previous bookings for each customers (for every booking or transaction)
+	mostly time of the quote or booking
 	"""
 
-	def transform(self, X, **kwargs):
+	def transform(self, X):
 
-		return pd.concat([
-				pd.get_dummies(X['QuoteWeek'], prefix='qwk'),
-				pd.get_dummies(X['QuoteDay'], prefix='qd'),
-				pd.get_dummies(X['QuoteHour'], prefix='qh')], sort=False, axis=1)
+		qtiming_cols = 'QuoteWeek QuoteDay QuoteHour'.split()
 
-	def fit(self, X, y=None, **kwargs):
-		return self
+		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in qtiming_cols], 
+			sort=False, axis=1)
 
-class PreviousBookingsSameCountry(TransformerMixin):
-
-	"""
-	extract total previous bookings for each customers (for every booking or transaction)
-	"""
-
-	def transform(self, X, **kwargs):
-
-		prevs = []
-
-		for r in X.groupby('CustomerId'):
-
-			d = r[1].sort_values('CreatedOn')
-
-			prev_bks = []
-			prev_qts = []
-			prev_cnl = []
-			
-			for i, cr in enumerate(d.iterrows()):
-
-				this_country = cr[1]['ToCountry']
-
-				prev_acts = d.iloc[:i]
-
-				prev_actv_this_country = prev_acts[prev_acts['ToCountry'] == this_country]
-
-				if not prev_actv_this_country.empty:
-
-					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 1])
-					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 0])
-					prev_cnl_this_country = len(prev_actv_this_country[prev_actv_this_country['Cancelled'] == 1])
-				else:
-					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
-
-				prev_bks.append(prev_bks_this_country)
-				prev_qts.append(prev_qts_this_country)
-				prev_cnl.append(prev_cnl_this_country)
-
-			prevs.append(pd.DataFrame({'prev_bks_this_country': prev_bks,
-							'prev_qts_this_country': prev_qts,
-							'prev_cnl_this_country': prev_cnl}).set_index(d.index))
-
-		return pd.concat(prevs)
-
-	def fit(self, X, y=None, **kwargs):
-		return self
-
-class PreviousBookingsThisWeek(TransformerMixin):
-
-	"""
-	extract total previous bookings for each customers (for every booking or transaction)
-	"""
-
-	def transform(self, X, **kwargs):
-
-		prevs1 = [] 
-		prevs2 = []
-
-		for p, w in zip([prevs1, prevs2], ['QuoteWeek', 'QuoteDay']):
-
-			for r in X.groupby('CustomerId'):
-
-				d = r[1].sort_values('CreatedOn')
-
-				prev_bks = []
-				prev_qts = []
-				prev_cnl = []
-			
-				for i, cr in enumerate(d.iterrows()):
-
-					this_week = cr[1][w]
-
-					prev_acts = d.iloc[:i]
-
-					prev_actv_this_country = prev_acts[prev_acts[w] == this_week]
-
-					if not prev_actv_this_country.empty:
-
-						prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 1])
-						prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 0])
-
-					else:
-						prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
-
-					prev_bks.append(prev_bks_this_country)
-					prev_qts.append(prev_qts_this_country)
-					prev_cnl.append(prev_cnl_this_country)
-
-				p.append(pd.DataFrame({'prev_bks_this_' + w: prev_bks,
-							'prev_qts_this_' + w: prev_qts,
-							'prev_cnl_this_' + w: prev_cnl}).set_index(d.index))
-
-		return pd.concat([pd.concat(prevs1), pd.concat(prevs2)], axis=1)
-
-	def fit(self, X, y=None, **kwargs):
-		return self
-
-class PreviousBookingsSameDay(TransformerMixin):
-
-	"""
-	extract total previous bookings for each customers (for every booking or transaction)
-	"""
-
-	def transform(self, X, **kwargs):
-
-		prevs = [] 
-
-		for r in X.groupby('CustomerId'):
-
-			d = r[1].sort_values('CreatedOn')
-
-			prev_bks = []
-			prev_qts = []
-			prev_cnl = []
-			
-			for i, cr in enumerate(d.iterrows()):
-
-				this_day = cr[1]['CreatedOnDate']
-
-				prev_acts = d.iloc[:i]
-
-				prev_actv_this_country = prev_acts[prev_acts['CreatedOnDate'] == this_day]
-
-				if not prev_actv_this_country.empty:
-
-					prev_bks_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 1])
-					prev_qts_this_country = len(prev_actv_this_country[prev_actv_this_country['isBooking'] == 0])
-
-				else:
-					prev_bks_this_country = prev_qts_this_country = prev_cnl_this_country = 0
-
-				prev_bks.append(prev_bks_this_country)
-				prev_qts.append(prev_qts_this_country)
-				prev_cnl.append(prev_cnl_this_country)
-
-			prevs.append(pd.DataFrame({'prev_bks_same_day': prev_bks,
-							'prev_qts_same_day': prev_qts,
-							'prev_cnl__same_day': prev_cnl}).set_index(d.index))
-
-		return pd.concat(prevs)
-
-	def fit(self, X, y=None, **kwargs):
+	def fit(self, X, y=None):
 		return self
 
 class PrevQtsThisTrip(TransformerMixin):
@@ -276,39 +135,69 @@ class PrevQtsThisTrip(TransformerMixin):
 	def fit(self, X, y=None, **kwargs):
 		return self
 
-class PropensityEstimator:
+class DataLoader:
 
 	def __init__(self):
+
+		"""
+		'isBooking', 'FromDate',
+       'ToDate', 'FromDayWeek', 'ToDayWeek', 'CreatedOn', 'CreatedOnDate',
+       'Cancelled', 'DurationDays', 'UpfrontDays',  'CurrencyId', 'Paid', 'Coupon', 'isCar', 'is4x4',
+       'isCamper', 'isMinibus', 'isMotorHome', 'ToCountry', 'Lang',
+       'FirstName', 'LastName', 'Email', 'ResCountry', 'prev_bks', 'prev_qts',
+       'prev_cnl', 'prev_act_bk', 'fst_act_bk', 'last_act_same_cnt',
+       'prev_act_same_cnt', 'prev_diff_cnt'
+		"""
 		
-		self.vars = {'cat': 'FromDayWeek ToDayWeek QuoteWeek QuoteDay QuoteHour Lang ResCountry'.split()}
+		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
+		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load_data(self, tr_file='B2C_Rentalcover_31DEC2019.csv'):
+	def load(self, file='B2C_Rentalcover_31DEC2019.csv'):
 
-		self.d = pd.read_csv('data/' + tr_file, 
-					parse_dates=['FromDate','ToDate','CreatedOn', 'CreatedOnDate'])
+		self.data = pd.read_csv('data/' + file, parse_dates=self.cols_to_parse_date)
 
-		print(f'{self.d["CustomerId"].nunique():,} customer ids')
-		print(f'{len(self.d[self.d["isBooking"] == 1]):,} bookings')
-		print(f'{len(self.d[self.d["isBooking"] == 0]):,} quotes')
+		print(f'{len(self.data):,} rows')
+		print(f'{self.data["CustomerId"].nunique():,} customer ids')
+		print(f'{self.data["Reference"].nunique():,} references')
+		print(f'{len(self.data[self.data["isBooking"] == 1]):,} bookings')
+		print(f'{len(self.data[self.data["isBooking"] == 0]):,} quotes')
 
-		# print(pd.get_dummies(self.d.iloc[:30][self.vars['cat']], prefix='is'))
+		self.data = self.data.drop(self.cols_to_drop, axis=1)
+
+		cs = ['AU', 'US', 'IT', 'GB', 'ES', 'NZ', 'CA', 'FR', 'DE', 'PT', 'GR', 'IS',
+		       'JP', 'IE', 'CH', 'ZA', 'NL', 'AT', 'MX', 'HR']
+
+		self.data['ToCountry'] = self.data['ToCountry'].apply(lambda x: x if x in cs else 'XX')
+		self.data['ResCountry'] = self.data['ResCountry'].apply(lambda x: x if x in cs else 'XX')
+
 
 		return self
 
 if __name__ == '__main__':
 	
-	pe = PropensityEstimator().load_data()
+	dl = DataLoader().load()
 
-	features = FeatureUnion([('prev_activity_counts', PrevActivityCounts()), 
-							 ('vehicle_type', VehicleType()),
-							 ('trip_details', TripDetails()), 
-							 ('customer_details', CustomerDetails()), 
-							 ('payment', Payment()), 
-							 ('quote_timing', QuoteTiming()), 
-							 ('prev_activities_same_country', PreviousBookingsSameCountry()), 
-							 ('prev_bks_this_week', PreviousBookingsThisWeek()), 
-							 ('prev_bks_this_day', PreviousBookingsSameDay()), 
-							 ('prev_qts_this_trip', PrevQtsThisTrip())])
+	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
+	y = dl.data['isBooking'].values
 
-	pd.DataFrame(features.fit_transform(pe.d)).to_csv('fts.csv', index=False)
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=278)
+
+	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
+
+	features = FeatureUnion([('trip_details', TripDetails()), 
+							 ('vehicle_type', VehicleType()), 
+							 ('cust_details', CustomerDetails()), 
+							 ('payment_details', PaymentDetails()), 
+							 ('quote_timing', QuoteTiming())])
+
+	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
+
+	pipe.fit(X_train, y_train)
+
+	y_h = pipe.predict(X_test)
+
+	print(f'accuracy: {accuracy_score(y_test, y_h)}')
+
+	print(classification_report(y_test, y_h))
+
 
