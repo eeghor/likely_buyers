@@ -12,59 +12,37 @@ import numpy as np
 from sklearn.base import TransformerMixin
 from sklearn.compose import ColumnTransformer
 
-class PrevActivityCounts(TransformerMixin):
-
-	"""
-	extract total previous bookings, quotes and cancellations for each customers and for every booking or quote
-	"""
-
-	def transform(self, X, **kwargs):
-
-		X_ = X[['CustomerId', 'BookingId', 'CreatedOn', 'Cancelled', 'isBooking']].sort_values(['CustomerId', 'CreatedOn'])
-		# X_['isBooking'] = X_['Type'].apply(lambda x: 1 if x == 'Booking' else 0)
-		X_['isQuote'] = X_['isBooking'].apply(lambda x: 0 if x == 1 else 1)
-
-		prevs = []
-		
-
-		for r in X_[['CustomerId', 'isBooking', 'isQuote', 'Cancelled']].groupby('CustomerId'):
-			
-			prevs.append(r[1].cumsum().shift(1, fill_value=0)[['isBooking', 'isQuote', 'Cancelled']] \
-				 .rename(columns={'isBooking': 'prev_bks', 'isQuote': 'prev_qts', 'Cancelled': 'prev_cnl'}))
-
-		return X.join(pd.concat(prevs), how='inner')[['prev_bks', 'prev_qts', 'prev_cnl']]
-
-	def fit(self, X, y=None, **kwargs):
-		return self
 
 class VehicleType(TransformerMixin):
 
 	"""
-	extract total previous bookings for each customers (for every booking or transaction)
+	what sort of a vehicle a customer was interested in
 	"""
 
-	def transform(self, X, **kwargs):
+	def transform(self, X):
 
-		return X[['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']]
+		veh_type_cols = 'isCar is4x4 isCamper isMinibus isMotorHome'.split()
 
-	def fit(self, X, y=None, **kwargs):
+		return X[veh_type_cols]
+
+	def fit(self, X, y=None):
 		return self
 
 class TripDetails(TransformerMixin):
 
 	"""
-	extract total previous bookings for each customers (for every booking or transaction)
+	available trip details
 	"""
 
-	def transform(self, X, **kwargs):
+	def transform(self, X):
 
-		return pd.concat([
-				pd.get_dummies(X['ToCountry'], prefix='to'),
-				pd.get_dummies(X['FromDayWeek'], prefix='from'),
-				pd.get_dummies(X['ToDayWeek'], prefix='to'),
-				X[['DurationDays', 'UpfrontDays', 'Cancelled']]], sort=False, axis=1)
+		tr_details_cat = 'ToCountry FromDayWeek ToDayWeek'.split()
+		tr_details_asis = 'DurationDays UpfrontDays Cancelled'.split()
 
-	def fit(self, X, y=None, **kwargs):
+		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in tr_details_cat].append(X[tr_details_asis]),
+			sort=False, axis=1)
+
+	def fit(self, X, y=None):
 		return self
 
 class CustomerDetails(TransformerMixin):
