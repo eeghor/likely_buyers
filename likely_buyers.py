@@ -36,10 +36,24 @@ class TripDetails(TransformerMixin):
 
 	def transform(self, X):
 
-		tr_details_cat = 'ToCountry FromDayWeek ToDayWeek'.split()
+		dm_ = pd.get_dummies(X['ToCountry'], prefix='tocountry')
+		print(list(dm_))
+		# print(dm_.head())
+		dms = []
+
+		for c in 'C1 C2 C3 C4 XX'.split():
+			if c not in set(X['ToCountry']):
+				dms.append(pd.DataFrame({'ToCountry'.lower() + '_' + c: [0]*len(X)}))
+			else:
+				dms.append(dm_['ToCountry'.lower() + '_' + c])
+
+
+
+
+		tr_details_cat = 'FromDayWeek ToDayWeek'.split()
 		tr_details_asis = 'DurationDays UpfrontDays Cancelled'.split()
 
-		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in tr_details_cat] + [X[tr_details_asis]],
+		return pd.concat(dms + [pd.get_dummies(X[c], prefix=c.lower()) for c in tr_details_cat] + [X[tr_details_asis]],
 			sort=False, axis=1)
 
 	def fit(self, X, y=None):
@@ -164,12 +178,16 @@ class DataLoader:
 
 		self.data = self.data.drop(self.cols_to_drop, axis=1)
 
-		cs = ['AU', 'US', 'IT', 'GB', 'ES', 'NZ', 'CA', 'FR', 'DE', 'PT', 'GR', 'IS',
-		       'JP', 'IE', 'CH', 'ZA', 'NL', 'AT', 'MX', 'HR']
+		# cs = ['AU', 'US', 'IT', 'GB']
 
-		self.data['ToCountry'] = self.data['ToCountry'].apply(lambda x: x if x in cs else 'XX')
-		self.data['ResCountry'] = self.data['ResCountry'].apply(lambda x: x if x in cs else 'XX')
+		cs = {'C1': ['AU', 'NZ', 'US', 'GB', 'CA', 'IE'],
+				'C2': ['IT', 'ES', 'FR', 'PT', 'GR', 'CY', 'HR', 'ME'],
+				'C3': ['UA', 'RU', 'MD', 'BY', 'PL', 'CZ', 'HU'],
+				'C4': ['DE', 'CH', 'NL', 'SE', 'AT', 'FI', 'NO', 'DK']}
 
+		self.data['ToCountry'] = self.data['ToCountry'].apply(lambda x: '-'.join([c for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
+		self.data['ResCountry'] = self.data['ResCountry'].apply(lambda x: '-'.join([c for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
+		print(self.data['ResCountry'].unique())
 
 		return self
 
@@ -180,7 +198,7 @@ if __name__ == '__main__':
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
 
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=278)
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=278, stratify=X['ToCountry'])
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
 
@@ -192,9 +210,13 @@ if __name__ == '__main__':
 
 	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
-	pipe.fit(X_train, y_train)
+	pars = {'randomforestclassifier__n_estimators': (50, 100, 150, 200)}
 
-	y_h = pipe.predict(X_test)
+	grid_search = GridSearchCV(pipe, pars, n_jobs=2, verbose=1, cv=4)
+
+	grid_search.fit(X_train, y_train)
+
+	y_h = grid_search.predict(X_test)
 
 	print(f'accuracy: {accuracy_score(y_test, y_h)}')
 
