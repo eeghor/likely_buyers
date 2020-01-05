@@ -36,25 +36,49 @@ class TripDetails(TransformerMixin):
 
 	def transform(self, X):
 
-		dm_ = pd.get_dummies(X['ToCountry'], prefix='tocountry')
-		print(list(dm_))
-		# print(dm_.head())
-		dms = []
 
-		for c in 'C1 C2 C3 C4 XX'.split():
-			if c not in set(X['ToCountry']):
-				dms.append(pd.DataFrame({'ToCountry'.lower() + '_' + c: [0]*len(X)}))
-			else:
-				dms.append(dm_['ToCountry'.lower() + '_' + c])
-
-
-
-
-		tr_details_cat = 'FromDayWeek ToDayWeek'.split()
+		# tr_details_cat = 'FromDayWeek ToDayWeek'.split()
 		tr_details_asis = 'DurationDays UpfrontDays Cancelled'.split()
 
-		return pd.concat(dms + [pd.get_dummies(X[c], prefix=c.lower()) for c in tr_details_cat] + [X[tr_details_asis]],
-			sort=False, axis=1)
+		return X[tr_details_asis]
+
+	def fit(self, X, y=None):
+		return self
+
+class PrevActivities(TransformerMixin):
+
+	"""
+	available trip details
+	"""
+
+	def transform(self, X):
+
+		pa_cols = 'prev_bks prev_qts prev_cnl prev_act_bk fst_act_bk last_act_same_cnt prev_act_same_cnt prev_diff_cnt'.split()
+
+		return X[pa_cols]
+
+	def fit(self, X, y=None):
+		return self
+
+class ToFromCountries(TransformerMixin):
+
+	"""
+	where is a customer renting a car and what's his country or residence
+	"""
+
+	def transform(self, X):
+
+		cnt_cols = 'ToCountry ResCountry'.split()
+		all_dummy_names = sorted(['_'.join([cl.lower(), c]) for c in 'C1 C2 C3 C4 XX'.split() for cl in cnt_cols])
+
+		_X = pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cnt_cols], sort=False, axis=1)
+
+		for c in all_dummy_names:
+			if c not in _X.columns:
+				_X[c] = 0
+
+		return _X[all_dummy_names]
+
 
 	def fit(self, X, y=None):
 		return self
@@ -67,7 +91,10 @@ class CustomerDetails(TransformerMixin):
 
 	def transform(self, X):
 
-		cus_details_cols = 'ResCountry Lang'.split()
+		cus_details_cols = ['Lang']
+
+		X['Lang'] = X['Lang'].apply(lambda x: x if x in 'en de fr es ru jp'.split() else 'xx')
+
 
 		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cus_details_cols], 
 			sort=False, axis=1)
@@ -158,15 +185,13 @@ class DataLoader:
        'ToDate', 'FromDayWeek', 'ToDayWeek', 'CreatedOn', 'CreatedOnDate',
        'Cancelled', 'DurationDays', 'UpfrontDays',  'CurrencyId', 'Paid', 'Coupon', 'isCar', 'is4x4',
        'isCamper', 'isMinibus', 'isMotorHome', 'ToCountry', 'Lang',
-       'FirstName', 'LastName', 'Email', 'ResCountry', 'prev_bks', 'prev_qts',
-       'prev_cnl', 'prev_act_bk', 'fst_act_bk', 'last_act_same_cnt',
-       'prev_act_same_cnt', 'prev_diff_cnt'
+       'FirstName', 'LastName', 'Email', 'ResCountry', 
 		"""
 		
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='B2C_Rentalcover_31DEC2019.csv'):
+	def load(self, file='B2C_Rentalcover_04JAN2020.csv'):
 
 		self.data = pd.read_csv('data/' + file, parse_dates=self.cols_to_parse_date)
 
@@ -178,16 +203,15 @@ class DataLoader:
 
 		self.data = self.data.drop(self.cols_to_drop, axis=1)
 
-		# cs = ['AU', 'US', 'IT', 'GB']
+		print(list(self.data))
 
 		cs = {'C1': ['AU', 'NZ', 'US', 'GB', 'CA', 'IE'],
-				'C2': ['IT', 'ES', 'FR', 'PT', 'GR', 'CY', 'HR', 'ME'],
+				'C2': ['IT', 'ES', 'FR', 'PT', 'GR', 'CY', 'HR', 'ME', 'TR'],
 				'C3': ['UA', 'RU', 'MD', 'BY', 'PL', 'CZ', 'HU'],
 				'C4': ['DE', 'CH', 'NL', 'SE', 'AT', 'FI', 'NO', 'DK']}
 
 		self.data['ToCountry'] = self.data['ToCountry'].apply(lambda x: '-'.join([c for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
 		self.data['ResCountry'] = self.data['ResCountry'].apply(lambda x: '-'.join([c for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
-		print(self.data['ResCountry'].unique())
 
 		return self
 
@@ -202,11 +226,14 @@ if __name__ == '__main__':
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
 
-	features = FeatureUnion([('trip_details', TripDetails()), 
+	features = FeatureUnion([('trip_details', TripDetails()),
+							 ('to_from_countries', ToFromCountries()), 
+							 ('prev_activities', PrevActivities()),
 							 ('vehicle_type', VehicleType()), 
 							 ('cust_details', CustomerDetails()), 
 							 ('payment_details', PaymentDetails()), 
-							 ('quote_timing', QuoteTiming())])
+							 # ('quote_timing', QuoteTiming())
+							 ])
 
 	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
