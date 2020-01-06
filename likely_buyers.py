@@ -12,6 +12,11 @@ import numpy as np
 from sklearn.base import TransformerMixin
 from sklearn.compose import ColumnTransformer
 
+# popular touristic destinations
+touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
+					'AU': ['ID', 'NZ', 'US', 'TH', 'IN', 'CN', 'UK', 'SG', 'JP', 'MY', 'HK', 'FJ', 'KR'],
+					'NZ': ['AU', 'US', 'FJ', 'UK', 'CN']}
+
 
 class VehicleType(TransformerMixin):
 
