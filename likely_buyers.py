@@ -15,7 +15,11 @@ from sklearn.compose import ColumnTransformer
 # popular touristic destinations
 touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
 					'AU': ['ID', 'NZ', 'US', 'TH', 'IN', 'CN', 'UK', 'SG', 'JP', 'MY', 'HK', 'FJ', 'KR'],
-					'NZ': ['AU', 'US', 'FJ', 'UK', 'CN']}
+					'NZ': ['AU', 'US', 'FJ', 'UK', 'CN'],
+					'US': ['IN', 'JP', 'CN', 'TW', 'TH', 'PH', 'BH', 'DO', 'JA', 'CR', 'CZ', 'HU', 'PL',
+							'AT', 'FR', 'DE', 'IE', 'IS', 'IT', 'NL', 'ES', 'UK', 'IL', 'AU', 'CO'],
+							'RU': ['TR', 'DE', 'TH', 'IT', 'ES', 'AE', 'CY', 'GR', 'TN', 'VN','FR',
+							'CZ', 'IL', 'ME', 'AT', 'NL', 'US']}
 
 
 class VehicleType(TransformerMixin):
@@ -74,15 +78,21 @@ class ToFromCountries(TransformerMixin):
 	def transform(self, X):
 
 		cnt_cols = 'ToCountry ResCountry'.split()
-		all_dummy_names = sorted(['_'.join([cl.lower(), c]) for c in 'C1 C2 C3 C4 XX'.split() for cl in cnt_cols])
 
 		_X = pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cnt_cols], sort=False, axis=1)
+		_X['US_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['US'] else 0)
+		_X['AU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['AU'] else 0)
+		_X['UK_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['UK'] else 0)
+		_X['NZ_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['NZ'] else 0)
+		_X['RU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['RU'] else 0)
+
+		all_dummy_names = sorted(['_'.join([cl.lower(), c]) for c in 'C1 C2 C3 C4 XX'.split() for cl in cnt_cols])
 
 		for c in all_dummy_names:
 			if c not in _X.columns:
 				_X[c] = 0
 
-		return _X[all_dummy_names]
+		return _X[all_dummy_names + ['US_tour_dest'] + ['AU_tour_dest'] + ['UK_tour_dest'] + ['NZ_tour_dest'] + ['RU_tour_dest']]
 
 
 	def fit(self, X, y=None):
@@ -132,8 +142,33 @@ class QuoteTiming(TransformerMixin):
 
 		qtiming_cols = 'QuoteWeek QuoteDay QuoteHour'.split()
 
-		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in qtiming_cols], 
-			sort=False, axis=1)
+		qweek_names = ['QuoteWeek'.lower() + '_' + str(c) for c in range(1,53)]
+		qday_names = ['quoteday_' + d for d in 'Sun Mon Tue Wed Thu Fri Sat'.split()]
+		qhr_names = [f'quotehour_{h:02}' for h in range(25)]
+
+		dummy_weeks = pd.get_dummies(X['QuoteWeek'])
+		dummy_days = pd.get_dummies(X['QuoteDay'])
+		dummy_hrs = pd.get_dummies(X['QuoteHour'])
+
+		for w in qweek_names:
+			if w not in dummy_weeks.columns:
+				dummy_weeks[w] = 0
+
+		dummy_weeks = dummy_weeks[qweek_names]
+
+		for w in qday_names:
+			if w not in dummy_days.columns:
+				dummy_days[w] = 0
+
+		dummy_days = dummy_days[qday_names]
+
+		for w in qhr_names:
+			if w not in dummy_hrs.columns:
+				dummy_hrs[w] = 0
+
+		dummy_hrs = dummy_hrs[qhr_names]
+
+		return pd.concat([dummy_weeks, dummy_days, dummy_hrs], sort=False, axis=1)
 
 	def fit(self, X, y=None):
 		return self
@@ -237,7 +272,7 @@ if __name__ == '__main__':
 							 ('vehicle_type', VehicleType()), 
 							 ('cust_details', CustomerDetails()), 
 							 ('payment_details', PaymentDetails()), 
-							 # ('quote_timing', QuoteTiming())
+							 ('quote_timing', QuoteTiming())
 							 ])
 
 	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
