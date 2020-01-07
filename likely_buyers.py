@@ -221,11 +221,6 @@ class DataLoader:
 	def __init__(self):
 
 		"""
-		'isBooking', 'FromDate',
-       'ToDate', 'FromDayWeek', 'ToDayWeek', 'CreatedOn', 'CreatedOnDate',
-       'Cancelled', 'DurationDays', 'UpfrontDays',  'CurrencyId', 'Paid', 'Coupon', 'isCar', 'is4x4',
-       'isCamper', 'isMinibus', 'isMotorHome', 'ToCountry', 'Lang',
-       'FirstName', 'LastName', 'Email', 'ResCountry', 
 		"""
 		
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
