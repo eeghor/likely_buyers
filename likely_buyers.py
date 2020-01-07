@@ -3,6 +3,7 @@ from sklearn.decomposition import PCA
 from  sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.cluster import KMeans
 import pandas as pd
 from collections import Counter, defaultdict
 from sklearn.preprocessing import StandardScaler
@@ -21,6 +22,17 @@ touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 
 							'RU': ['TR', 'DE', 'TH', 'IT', 'ES', 'AE', 'CY', 'GR', 'TN', 'VN','FR',
 							'CZ', 'IL', 'ME', 'AT', 'NL', 'US']}
 
+class ModelTransformer(TransformerMixin):
+
+    def __init__(self, model):
+        self.model = model
+
+    def fit(self, *args, **kwargs):
+        self.model.fit(*args, **kwargs)
+        return self
+
+    def transform(self, X, **transform_params):
+        return pd.DataFrame(self.model.predict(X))
 
 class VehicleType(TransformerMixin):
 
@@ -267,7 +279,8 @@ if __name__ == '__main__':
 							 ('vehicle_type', VehicleType()), 
 							 ('cust_details', CustomerDetails()), 
 							 ('payment_details', PaymentDetails()), 
-							 ('quote_timing', QuoteTiming())
+							 ('quote_timing', QuoteTiming()), 
+							 ('cluster', ModelTransformer(KMeans(n_clusters=2)))
 							 ])
 
 	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
