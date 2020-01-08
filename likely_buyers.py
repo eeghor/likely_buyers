@@ -20,6 +20,8 @@ outbound = defaultdict(lambda: defaultdict())
 for country, share in zip(outbound_uk['iso_code'].values, outbound_uk['share']):
 	outbound['uk'][country] = share
 
+cnt_lefthand = pd.read_csv('data/countries_lefthand.csv')
+
 # popular touristic destinations
 touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
 					'AU': ['ID', 'NZ', 'US', 'TH', 'IN', 'CN', 'UK', 'SG', 'JP', 'MY', 'HK', 'FJ', 'KR'],
@@ -96,23 +98,59 @@ class ToFromCountries(TransformerMixin):
 
 	def transform(self, X):
 
-		cnt_cols = 'ToCountry ResCountry'.split()
+		top30_to = ['AU', 'US', 'IT', 'GB', 'ES', 'CA', 'NZ', 'DE', 'FR', 'IS', 'PT', 
+					'GR', 'JP', 'IE', 'CH', 'NL', 'ZA', 'MX', 'AT', 'TH', 'PL', 'HR', 
+					'CY', 'IL', 'NO', 'RO', 'BE', 'TW', 'CZ', 'HU']
 
-		_X = pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cnt_cols], sort=False, axis=1)
+		to_country_names = ['tocountry_' + c for c in top30_to] + ['tocountry_XX']
+
+		top30_from = ['AU', 'GB', 'RU', 'US', 'CA', 'IL', 'TW', 'ES', 'HK', 'SG', 'IT',
+					  'FR', 'DE', 'CH', 'NZ', 'NL', 'JP', 'KR', 'UA', 'PL', 'MY', 'AE', 
+					  'BE', 'IE', 'CN', 'BR', 'AR', 'TH', 'IN', 'CZ']
+
+		from_country_names = ['rescountry_' + c for c in top30_from] + ['rescountry_XX']
+
+		cs = {'C1': ['AU', 'NZ', 'US', 'GB', 'CA', 'IE'],
+			  'C2': ['IT', 'ES', 'FR', 'PT', 'GR', 'CY', 'HR', 'ME', 'TR'],
+			  'C3': ['UA', 'RU', 'MD', 'BY', 'PL', 'CZ', 'HU'],
+			  'C4': ['DE', 'CH', 'NL', 'SE', 'AT', 'FI', 'NO', 'DK']}
+
+		_Y1 = X['ToCountry'].apply(lambda x: x if x in top30_to else 'XX')
+		_Y2 = X['ResCountry'].apply(lambda x: x if x in top30_from else 'XX')
+
+		_X1 = pd.get_dummies(_Y1, prefix='tocountry')
+		_X2 = pd.get_dummies(_Y2, prefix='rescountry')
+
+		for n in to_country_names:
+			if n not in _X1.columns:
+				_X1[n] = 0
+
+		for n in from_country_names:
+			if n not in _X2.columns:
+				_X2[n] = 0
+
+		_X3 = pd.DataFrame({'tocountry_lh': X['ToCountry'].isin(cnt_lefthand['iso_code'])*1})
+		_X4 = pd.DataFrame({'rescountry_lh': X['ResCountry'].isin(cnt_lefthand['iso_code'])*1})
+
+		# cnt_cols = 'ToCountry ResCountry'.split()
+
+		# _X = pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cnt_cols], sort=False, axis=1)
 		# _X['US_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['US'] else 0)
 		# _X['AU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['AU'] else 0)
-		# _X['UK_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['UK'] else 0)
-		_X['UK_tour_dest'] = X['ToCountry'].apply(lambda x: outbound['UK'][x] if x in outbound['UK'] else 0)
+		# _X5 = _Y1.apply(lambda x: 1 if x in touristic_dests['UK'] else 0)
+		_X5 = pd.DataFrame({'pop_dest_uk': _Y1.apply(lambda x: outbound['UK'][x] if x in outbound['UK'] else 0)})
+		# _X['from_lh_country'] = X['ResCountry'].isin(cnt_lefthand['iso_code'])*1
+		# _X['to_lh_country'] = X['ToCountry'].isin(cnt_lefthand['iso_code'])*1
 		# _X['NZ_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['NZ'] else 0)
 		# _X['RU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['RU'] else 0)
 
-		all_dummy_names = sorted(['_'.join([cl.lower(), c]) for c in 'C1 C2 C3 C4 XX'.split() for cl in cnt_cols])
+		# all_dummy_names = sorted(['_'.join([cl.lower(), c]) for c in 'C1 C2 C3 C4 XX'.split() for cl in cnt_cols])
 
-		for c in all_dummy_names:
-			if c not in _X.columns:
-				_X[c] = 0
+		# for c in all_dummy_names:
+		# 	if c not in _X.columns:
+		# 		_X[c] = 0
 
-		return _X[all_dummy_names + ['UK_tour_dest']]
+		return pd.concat([_X1, _X2, _X3, _X4, _X5], axis=1, sort=False)
 
 
 	def fit(self, X, y=None):
@@ -196,7 +234,7 @@ class QuoteTiming(TransformerMixin):
 
 		# dummy_hrs = dummy_hrs[qhr_names]
 
-		return pd.concat([dummy_months, dummy_weeks, dummy_days], sort=False, axis=1)
+		return pd.concat([dummy_months, dummy_weeks], sort=False, axis=1)
 
 	def fit(self, X, y=None):
 		return self
@@ -264,15 +302,7 @@ class DataLoader:
 		print(f'{len(self.data[self.data["isBooking"] == 1]):,} bookings')
 		print(f'{len(self.data[self.data["isBooking"] == 0]):,} quotes')
 
-		self.data = self.data.drop(self.cols_to_drop, axis=1)
-
-		cs = {'C1': ['AU', 'NZ', 'US', 'GB', 'CA', 'IE'],
-			  'C2': ['IT', 'ES', 'FR', 'PT', 'GR', 'CY', 'HR', 'ME', 'TR'],
-			  'C3': ['UA', 'RU', 'MD', 'BY', 'PL', 'CZ', 'HU'],
-			  'C4': ['DE', 'CH', 'NL', 'SE', 'AT', 'FI', 'NO', 'DK']}
-
-		self.data['ToCountry'] = self.data['ToCountry'].apply(lambda x: '-'.join([str(c) for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
-		self.data['ResCountry'] = self.data['ResCountry'].apply(lambda x: '-'.join([str(c) for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
+		self.data = self.data.drop(self.cols_to_drop, axis=1).fillna(0)
 
 		return self
 
@@ -283,7 +313,7 @@ if __name__ == '__main__':
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
 
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=278, stratify=X['ToCountry'])
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=278)
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
 
@@ -294,10 +324,12 @@ if __name__ == '__main__':
 							 ('cust_details', CustomerDetails()), 
 							 ('payment_details', PaymentDetails()), 
 							 ('quote_timing', QuoteTiming())
-							 # ('cluster', ModelTransformer(KMeans(n_clusters=2)))
 							 ])
 
-	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
+	pipe_kmean = Pipeline([('fts', features),
+							  ('cluster', ModelTransformer(KMeans(n_clusters=2)))])
+
+	pipe = make_pipeline(FeatureUnion([('fs', features),('km', pipe_kmean)]), StandardScaler(), RandomForestClassifier())
 
 	pars = {'randomforestclassifier__n_estimators': (50, 100, 150, 200, 300)}
 
