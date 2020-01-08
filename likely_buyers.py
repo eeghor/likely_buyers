@@ -13,6 +13,13 @@ import numpy as np
 from sklearn.base import TransformerMixin
 from sklearn.compose import ColumnTransformer
 
+outbound_uk = pd.read_csv('data/outbound_tourism_uk.csv')
+outbound_uk['share'] = round(outbound_uk['2018']/outbound_uk['2018'].sum(),4)
+outbound = defaultdict(lambda: defaultdict())
+
+for country, share in zip(outbound_uk['iso_code'].values, outbound_uk['share']):
+	outbound['uk'][country] = share
+
 # popular touristic destinations
 touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
 					'AU': ['ID', 'NZ', 'US', 'TH', 'IN', 'CN', 'UK', 'SG', 'JP', 'MY', 'HK', 'FJ', 'KR'],
@@ -32,7 +39,7 @@ class ModelTransformer(TransformerMixin):
         return self
 
     def transform(self, X, **transform_params):
-        return pd.DataFrame(self.model.predict(X))
+        return self.model.predict(X)
 
 class VehicleType(TransformerMixin):
 
@@ -92,11 +99,12 @@ class ToFromCountries(TransformerMixin):
 		cnt_cols = 'ToCountry ResCountry'.split()
 
 		_X = pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cnt_cols], sort=False, axis=1)
-		_X['US_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['US'] else 0)
-		_X['AU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['AU'] else 0)
-		_X['UK_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['UK'] else 0)
-		_X['NZ_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['NZ'] else 0)
-		_X['RU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['RU'] else 0)
+		# _X['US_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['US'] else 0)
+		# _X['AU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['AU'] else 0)
+		# _X['UK_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['UK'] else 0)
+		_X['UK_tour_dest'] = X['ToCountry'].apply(lambda x: outbound['UK'][x] if x in outbound['UK'] else 0)
+		# _X['NZ_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['NZ'] else 0)
+		# _X['RU_tour_dest'] = X['ToCountry'].apply(lambda x: 1 if x in touristic_dests['RU'] else 0)
 
 		all_dummy_names = sorted(['_'.join([cl.lower(), c]) for c in 'C1 C2 C3 C4 XX'.split() for cl in cnt_cols])
 
@@ -104,7 +112,7 @@ class ToFromCountries(TransformerMixin):
 			if c not in _X.columns:
 				_X[c] = 0
 
-		return _X[all_dummy_names + ['US_tour_dest'] + ['AU_tour_dest'] + ['UK_tour_dest'] + ['NZ_tour_dest'] + ['RU_tour_dest']]
+		return _X[all_dummy_names + ['UK_tour_dest']]
 
 
 	def fit(self, X, y=None):
@@ -118,13 +126,15 @@ class CustomerDetails(TransformerMixin):
 
 	def transform(self, X):
 
-		cus_details_cols = ['Lang']
+		lang_names = sorted(['lang_' + l for l in 'en de fr es ru jp xx'.split()])
 
-		X['Lang'] = X['Lang'].apply(lambda x: x if x in 'en de fr es ru jp'.split() else 'xx')
+		s = pd.get_dummies(X['Lang'].apply(lambda x: x if x in 'en de fr es ru jp'.split() else 'xx'), prefix='lang')
 
+		for nm in lang_names:
+			if nm not in s.columns:
+				s[nm] = 0
 
-		return pd.concat([pd.get_dummies(X[c], prefix=c.lower()) for c in cus_details_cols], 
-			sort=False, axis=1)
+		return s[lang_names]
 
 	def fit(self, X, y=None):
 		return self
@@ -152,15 +162,21 @@ class QuoteTiming(TransformerMixin):
 
 	def transform(self, X):
 
-		qtiming_cols = 'QuoteWeek QuoteDay QuoteHour'.split()
-
-		qweek_names = ['QuoteWeek'.lower() + '_' + str(c) for c in range(1,53)]
+		qmonth_names = ['quotemonth_' + m for m in sorted('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split())]
+		qweek_names = ['quoteweek_' + str(c) for c in range(1,53)]
 		qday_names = ['quoteday_' + d for d in 'Sun Mon Tue Wed Thu Fri Sat'.split()]
 		qhr_names = [f'quotehour_{h:02}' for h in range(25)]
 
-		dummy_weeks = pd.get_dummies(X['QuoteWeek'])
-		dummy_days = pd.get_dummies(X['QuoteDay'])
-		dummy_hrs = pd.get_dummies(X['QuoteHour'])
+		dummy_months = pd.get_dummies(X['QuoteMonth'], prefix='quotemonth')
+		dummy_weeks = pd.get_dummies(X['QuoteWeek'], prefix='quoteweek')
+		dummy_days = pd.get_dummies(X['QuoteDay'], prefix='quoteday')
+		# dummy_hrs = pd.get_dummies(X['QuoteHour'])
+
+		for w in qmonth_names:
+			if w not in dummy_months.columns:
+				dummy_months[w] = 0
+
+		dummy_months = dummy_months[qmonth_names]
 
 		for w in qweek_names:
 			if w not in dummy_weeks.columns:
@@ -174,13 +190,13 @@ class QuoteTiming(TransformerMixin):
 
 		dummy_days = dummy_days[qday_names]
 
-		for w in qhr_names:
-			if w not in dummy_hrs.columns:
-				dummy_hrs[w] = 0
+		# for w in qhr_names:
+		# 	if w not in dummy_hrs.columns:
+		# 		dummy_hrs[w] = 0
 
-		dummy_hrs = dummy_hrs[qhr_names]
+		# dummy_hrs = dummy_hrs[qhr_names]
 
-		return pd.concat([dummy_weeks, dummy_days, dummy_hrs], sort=False, axis=1)
+		return pd.concat([dummy_months, dummy_weeks, dummy_days], sort=False, axis=1)
 
 	def fit(self, X, y=None):
 		return self
@@ -238,7 +254,7 @@ class DataLoader:
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='B2C_Rentalcover_04JAN2020.csv'):
+	def load(self, file='B2C_Rentalcover_08JAN2020.csv'):
 
 		self.data = pd.read_csv('data/' + file, parse_dates=self.cols_to_parse_date)
 
@@ -250,15 +266,13 @@ class DataLoader:
 
 		self.data = self.data.drop(self.cols_to_drop, axis=1)
 
-		print(list(self.data))
-
 		cs = {'C1': ['AU', 'NZ', 'US', 'GB', 'CA', 'IE'],
-				'C2': ['IT', 'ES', 'FR', 'PT', 'GR', 'CY', 'HR', 'ME', 'TR'],
-				'C3': ['UA', 'RU', 'MD', 'BY', 'PL', 'CZ', 'HU'],
-				'C4': ['DE', 'CH', 'NL', 'SE', 'AT', 'FI', 'NO', 'DK']}
+			  'C2': ['IT', 'ES', 'FR', 'PT', 'GR', 'CY', 'HR', 'ME', 'TR'],
+			  'C3': ['UA', 'RU', 'MD', 'BY', 'PL', 'CZ', 'HU'],
+			  'C4': ['DE', 'CH', 'NL', 'SE', 'AT', 'FI', 'NO', 'DK']}
 
-		self.data['ToCountry'] = self.data['ToCountry'].apply(lambda x: '-'.join([c for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
-		self.data['ResCountry'] = self.data['ResCountry'].apply(lambda x: '-'.join([c for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
+		self.data['ToCountry'] = self.data['ToCountry'].apply(lambda x: '-'.join([str(c) for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
+		self.data['ResCountry'] = self.data['ResCountry'].apply(lambda x: '-'.join([str(c) for c in cs if x in cs[c]])).apply(lambda x: x if x != '' else 'XX')
 
 		return self
 
@@ -279,13 +293,13 @@ if __name__ == '__main__':
 							 ('vehicle_type', VehicleType()), 
 							 ('cust_details', CustomerDetails()), 
 							 ('payment_details', PaymentDetails()), 
-							 ('quote_timing', QuoteTiming()), 
-							 ('cluster', ModelTransformer(KMeans(n_clusters=2)))
+							 ('quote_timing', QuoteTiming())
+							 # ('cluster', ModelTransformer(KMeans(n_clusters=2)))
 							 ])
 
 	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
-	pars = {'randomforestclassifier__n_estimators': (50, 100, 150, 200)}
+	pars = {'randomforestclassifier__n_estimators': (50, 100, 150, 200, 300)}
 
 	grid_search = GridSearchCV(pipe, pars, n_jobs=2, verbose=1, cv=4)
 
@@ -293,7 +307,7 @@ if __name__ == '__main__':
 
 	y_h = grid_search.predict(X_test)
 
-	print(f'accuracy: {accuracy_score(y_test, y_h)}')
+	print(f'accuracy: {accuracy_score(y_test, y_h):06.4f}')
 
 	print(classification_report(y_test, y_h))
 
