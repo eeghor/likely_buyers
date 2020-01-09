@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from sklearn.preprocessing import StandardScaler
 import arrow
 import numpy as np
+import json
 
 from sklearn.base import TransformerMixin
 from sklearn.compose import ColumnTransformer
@@ -21,6 +22,14 @@ for country, share in zip(outbound_uk['iso_code'].values, outbound_uk['share']):
 	outbound['uk'][country] = share
 
 cnt_lefthand = pd.read_csv('data/countries_lefthand.csv')
+
+competitor_prices = {'AU': json.load(open('data/prices_pday_au.json'))}
+
+cheapest_pday = {'AU': np.amin(np.vstack((np.array(competitor_prices['AU'][comp].get('0_pday')) 
+						for comp in competitor_prices['AU'] if comp != 'rentalcover')), axis=0)}
+print(cheapest_pday)
+print(competitor_prices['AU']['rentalcover'])
+
 
 # popular touristic destinations
 touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
@@ -326,10 +335,10 @@ if __name__ == '__main__':
 							 ('quote_timing', QuoteTiming())
 							 ])
 
-	pipe_kmean = Pipeline([('fts', features),
-							  ('cluster', ModelTransformer(KMeans(n_clusters=2)))])
+	# pipe_kmean = Pipeline([('fts', features),
+	# 						  ('cluster', ModelTransformer(KMeans(n_clusters=2)))])
 
-	pipe = make_pipeline(FeatureUnion([('fs', features),('km', pipe_kmean)]), StandardScaler(), RandomForestClassifier())
+	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
 	pars = {'randomforestclassifier__n_estimators': (50, 100, 150, 200, 300)}
 
