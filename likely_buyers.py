@@ -1,7 +1,7 @@
 from sklearn.pipeline import Pipeline, FeatureUnion, make_pipeline
 from sklearn.decomposition import PCA
 from  sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.cluster import KMeans
 import pandas as pd
@@ -27,8 +27,6 @@ competitor_prices = {'AU': json.load(open('data/prices_pday_au.json'))}
 
 cheapest_pday = {'AU': np.amin(np.vstack((np.array(competitor_prices['AU'][comp].get('0_pday')) 
 						for comp in competitor_prices['AU'] if comp != 'rentalcover')), axis=0)}
-print(cheapest_pday)
-print(competitor_prices['AU']['rentalcover'])
 
 
 # popular touristic destinations
@@ -39,6 +37,53 @@ touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 
 							'AT', 'FR', 'DE', 'IE', 'IS', 'IT', 'NL', 'ES', 'UK', 'IL', 'AU', 'CO'],
 							'RU': ['TR', 'DE', 'TH', 'IT', 'ES', 'AE', 'CY', 'GR', 'TN', 'VN','FR',
 							'CZ', 'IL', 'ME', 'AT', 'NL', 'US']}
+
+def competitor_quote(rental_company, days, cheapest=True):
+
+	if rental_company == 'thrifty':
+
+		if days < 4:
+			perday = 8.81*cheapest + 15.0*(1.0 - cheapest)
+		elif 4 <= days < 14:
+			perday = 7.15*cheapest + 11.5*(1.0 - cheapest)
+		else:
+			perday = 6.05*cheapest + 9.05*(1.0 - cheapest)
+
+	elif rental_company == 'europcar':
+
+		if days == 1:
+			perday = 23.0
+		elif 2 <= days <= 3:
+			perday = 20.5
+		elif 4 <= days <= 6:
+			perday = 18.0
+		elif days in (set(range(7, 14)) - {8}):
+			perday = 13.0
+		elif days == 8:
+			perday = 17.30
+		elif 14 <= days <= 27:
+			perday = 10.5
+		else:
+			perday = 8.0
+
+	elif rental_company == 'herz':
+
+		perday = 26.40
+
+	elif rental_company == 'sixt':
+
+		if days < 6:
+			perday = 13.0*cheapest + 28.5*(1.0 - cheapest)
+		elif days == 6:
+			perday = 10.99*cheapest + 24.5*(1.0 - cheapest)
+		elif days == 7:
+			perday = 10.49*cheapest + 23.5*(1.0 - cheapest)
+		elif 8 <= days <= 14:
+			perday = 10.0*cheapest + 21.40*(1.0 - cheapest)
+		else:
+			perday = 10.0*cheapest + 20.30*(1.0 - cheapest)
+
+	return days*perday
 
 class ModelTransformer(TransformerMixin):
 
@@ -63,6 +108,30 @@ class VehicleType(TransformerMixin):
 		veh_type_cols = 'isCar is4x4 isCamper isMinibus isMotorHome'.split()
 
 		return X[veh_type_cols]
+
+	def fit(self, X, y=None):
+		return self
+
+class PotentialSavings(TransformerMixin):
+
+	"""
+	potential savings if a customer decides to accept the quoted price compared to the lowest
+	competitor price
+	"""
+
+	def transform(self, X):
+
+		savings = []
+
+		for i, (cnt, ndays, usd_paid) in enumerate(zip(X['ToCountry'], X['DurationDays'], X['Paid'])):
+			if (cnt in cheapest_pday):
+				use_price_perday = cheapest_pday[cnt][ndays] if ndays < 21 else cheapest_pday[cnt][-1]
+				savings.append(use_price_perday*ndays*0.69 - usd_paid)
+			else:
+				savings.append(0)
+
+
+		return pd.DataFrame({'savings': savings})
 
 	def fit(self, X, y=None):
 		return self
@@ -332,7 +401,8 @@ if __name__ == '__main__':
 							 ('vehicle_type', VehicleType()), 
 							 ('cust_details', CustomerDetails()), 
 							 ('payment_details', PaymentDetails()), 
-							 ('quote_timing', QuoteTiming())
+							 ('quote_timing', QuoteTiming()), 
+							 ('potential_savings', PotentialSavings())
 							 ])
 
 	# pipe_kmean = Pipeline([('fts', features),
@@ -351,5 +421,7 @@ if __name__ == '__main__':
 	print(f'accuracy: {accuracy_score(y_test, y_h):06.4f}')
 
 	print(classification_report(y_test, y_h))
+
+	print(confusion_matrix(y_test, y_h))
 
 
