@@ -1,6 +1,7 @@
 from sklearn.pipeline import Pipeline, FeatureUnion, make_pipeline
 from sklearn.decomposition import PCA
-from  sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.cluster import KMeans
@@ -11,7 +12,7 @@ import arrow
 import numpy as np
 import json
 
-from sklearn.base import TransformerMixin
+from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.compose import ColumnTransformer
 
 outbound_uk = pd.read_csv('data/outbound_tourism_uk.csv')
@@ -40,7 +41,9 @@ touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 
 
 def competitor_quote(rental_company, days, cheapest=True):
 
-	if rental_company == 'thrifty':
+	_rental_company = rental_company.lower().strip()
+
+	if _rental_company == 'thrifty':
 
 		if days < 4:
 			perday = 8.81*cheapest + 15.0*(1.0 - cheapest)
@@ -49,7 +52,7 @@ def competitor_quote(rental_company, days, cheapest=True):
 		else:
 			perday = 6.05*cheapest + 9.05*(1.0 - cheapest)
 
-	elif rental_company == 'europcar':
+	elif _rental_company == 'europcar':
 
 		if days == 1:
 			perday = 23.0
@@ -66,11 +69,11 @@ def competitor_quote(rental_company, days, cheapest=True):
 		else:
 			perday = 8.0
 
-	elif rental_company == 'herz':
+	elif _rental_company == 'herz':
 
 		perday = 26.40
 
-	elif rental_company == 'sixt':
+	elif _rental_company == 'sixt':
 
 		if days < 6:
 			perday = 13.0*cheapest + 28.5*(1.0 - cheapest)
@@ -85,7 +88,7 @@ def competitor_quote(rental_company, days, cheapest=True):
 
 	return days*perday
 
-class ModelTransformer(TransformerMixin):
+class ModelTransformer(BaseEstimator, TransformerMixin):
 
     def __init__(self, model):
         self.model = model
@@ -97,7 +100,7 @@ class ModelTransformer(TransformerMixin):
     def transform(self, X, **transform_params):
         return self.model.predict(X)
 
-class VehicleType(TransformerMixin):
+class VehicleType(BaseEstimator, TransformerMixin):
 
 	"""
 	what sort of a vehicle a customer was interested in
@@ -112,7 +115,7 @@ class VehicleType(TransformerMixin):
 	def fit(self, X, y=None):
 		return self
 
-class PotentialSavings(TransformerMixin):
+class PotentialSavings(BaseEstimator, TransformerMixin):
 
 	"""
 	potential savings if a customer decides to accept the quoted price compared to the lowest
@@ -136,7 +139,7 @@ class PotentialSavings(TransformerMixin):
 	def fit(self, X, y=None):
 		return self
 
-class TripDetails(TransformerMixin):
+class TripDetails(BaseEstimator, TransformerMixin):
 
 	"""
 	available trip details
@@ -146,14 +149,15 @@ class TripDetails(TransformerMixin):
 
 
 		# tr_details_cat = 'FromDayWeek ToDayWeek'.split()
-		tr_details_asis = 'DurationDays UpfrontDays Cancelled'.split()
+		# tr_details_asis = 'DurationDays UpfrontDays Cancelled'.split()
 
-		return X[tr_details_asis]
+		# return X[tr_details_asis]
+		return X
 
 	def fit(self, X, y=None):
 		return self
 
-class PrevActivities(TransformerMixin):
+class PrevActivities(BaseEstimator, TransformerMixin):
 
 	"""
 	available trip details
@@ -161,14 +165,14 @@ class PrevActivities(TransformerMixin):
 
 	def transform(self, X):
 
-		pa_cols = 'prev_bks prev_qts prev_cnl prev_act_bk fst_act_bk last_act_same_cnt prev_act_same_cnt prev_diff_cnt'.split()
+		# pa_cols = 'prev_bks prev_qts prev_cnl prev_act_bk fst_act_bk last_act_same_cnt prev_act_same_cnt prev_diff_cnt'.split()
 
-		return X[pa_cols]
+		return X
 
 	def fit(self, X, y=None):
 		return self
 
-class ToFromCountries(TransformerMixin):
+class ToFromCountries(BaseEstimator, TransformerMixin):
 
 	"""
 	where is a customer renting a car and what's his country or residence
@@ -234,7 +238,7 @@ class ToFromCountries(TransformerMixin):
 	def fit(self, X, y=None):
 		return self
 
-class CustomerDetails(TransformerMixin):
+class CustomerDetails(BaseEstimator, TransformerMixin):
 
 	"""
 	basic customer details
@@ -255,7 +259,7 @@ class CustomerDetails(TransformerMixin):
 	def fit(self, X, y=None):
 		return self
 
-class PaymentDetails(TransformerMixin):
+class PaymentDetails(BaseEstimator, TransformerMixin):
 
 	"""
 	potential or actual payment related: how much in USD was the quote, was there the permanent coupon
@@ -270,7 +274,7 @@ class PaymentDetails(TransformerMixin):
 	def fit(self, X, y=None):
 		return self
 
-class QuoteTiming(TransformerMixin):
+class QuoteTiming(BaseEstimator, TransformerMixin):
 
 	"""
 	mostly time of the quote or booking
@@ -317,7 +321,7 @@ class QuoteTiming(TransformerMixin):
 	def fit(self, X, y=None):
 		return self
 
-class PrevQtsThisTrip(TransformerMixin):
+class PrevQtsThisTrip(BaseEstimator, TransformerMixin):
 
 	"""
 	extract total previous bookings for each customers (for every booking or transaction)
@@ -395,22 +399,33 @@ if __name__ == '__main__':
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
 
-	features = FeatureUnion([('trip_details', TripDetails()),
-							 ('to_from_countries', ToFromCountries()), 
-							 ('prev_activities', PrevActivities()),
-							 ('vehicle_type', VehicleType()), 
-							 ('cust_details', CustomerDetails()), 
-							 ('payment_details', PaymentDetails()), 
-							 ('quote_timing', QuoteTiming()), 
-							 ('potential_savings', PotentialSavings())
-							 ])
-
-	# pipe_kmean = Pipeline([('fts', features),
-	# 						  ('cluster', ModelTransformer(KMeans(n_clusters=2)))])
+	pipe = Pipeline([('features', FeatureUnion([
+										 
+										 ('ct', ColumnTransformer([('trip_details', 
+											 								   TripDetails(), 
+											 								  ['DurationDays', 'UpfrontDays', 'Cancelled']),
+										 ('prev_activities', PrevActivities(), 'prev_bks prev_qts prev_cnl prev_act_bk fst_act_bk last_act_same_cnt prev_act_same_cnt prev_diff_cnt'.split())]))
+							 			 # ('to_from_countries', ToFromCountries()), 
+							 			 # ('prev_activities', PrevActivities()),
+							 			 # ('vehicle_type', VehicleType()), 
+							 			 # ('cust_details', CustomerDetails()), 
+							 			 # ('payment_details', PaymentDetails()), 
+							 			 # ('quote_timing', QuoteTiming()), 
+							 			 # ('potential_savings', PotentialSavings())
+							 			 ])
+					 ),
+			   		('classifiers', FeatureUnion([('randomforest', RandomForestClassifier()),
+			   									  ('gradboosting', GradientBoostingClassifier()),
+			   									  ('kmeans', ModelTransformer(KMeans(n_clusters=2))),
+			   									  ('adaboost', AdaBoostClassifier())])),
+			   		('last_classifier', KNeighborsClassifier(n_neighbors=3))
+			   		])
 
 	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
-	pars = {'randomforestclassifier__n_estimators': (50, 100, 150, 200, 300)}
+	pars = {'classifiers__randomforest__n_estimators': (50, 100, 150, 200, 300)}
+
+	# grid_search = GridSearchCV(pp, pars, n_jobs=2, verbose=1, cv=4)
 
 	grid_search = GridSearchCV(pipe, pars, n_jobs=2, verbose=1, cv=4)
 
@@ -422,6 +437,6 @@ if __name__ == '__main__':
 
 	print(classification_report(y_test, y_h))
 
-	print(confusion_matrix(y_test, y_h))
+	# print(confusion_matrix(y_test, y_h))
 
 
