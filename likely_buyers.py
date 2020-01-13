@@ -30,63 +30,141 @@ cheapest_pday = {'AU': np.amin(np.vstack((np.array(competitor_prices['AU'][comp]
 						for comp in competitor_prices['AU'] if comp != 'rentalcover')), axis=0)}
 
 
-# popular touristic destinations
-touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
-					'AU': ['ID', 'NZ', 'US', 'TH', 'IN', 'CN', 'UK', 'SG', 'JP', 'MY', 'HK', 'FJ', 'KR'],
-					'NZ': ['AU', 'US', 'FJ', 'UK', 'CN'],
-					'US': ['IN', 'JP', 'CN', 'TW', 'TH', 'PH', 'BH', 'DO', 'JA', 'CR', 'CZ', 'HU', 'PL',
-							'AT', 'FR', 'DE', 'IE', 'IS', 'IT', 'NL', 'ES', 'UK', 'IL', 'AU', 'CO'],
-							'RU': ['TR', 'DE', 'TH', 'IT', 'ES', 'AE', 'CY', 'GR', 'TN', 'VN','FR',
-							'CZ', 'IL', 'ME', 'AT', 'NL', 'US']}
+# # popular touristic destinations
+# touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
+# 					'AU': ['ID', 'NZ', 'US', 'TH', 'IN', 'CN', 'UK', 'SG', 'JP', 'MY', 'HK', 'FJ', 'KR'],
+# 					'NZ': ['AU', 'US', 'FJ', 'UK', 'CN'],
+# 					'US': ['IN', 'JP', 'CN', 'TW', 'TH', 'PH', 'BH', 'DO', 'JA', 'CR', 'CZ', 'HU', 'PL',
+# 							'AT', 'FR', 'DE', 'IE', 'IS', 'IT', 'NL', 'ES', 'UK', 'IL', 'AU', 'CO'],
+# 							'RU': ['TR', 'DE', 'TH', 'IT', 'ES', 'AE', 'CY', 'GR', 'TN', 'VN','FR',
+# 							'CZ', 'IL', 'ME', 'AT', 'NL', 'US']}
 
-def competitor_quote(rental_company, days, cheapest=True):
+def competitors_price(rental_company, country, days, cheapest=True, fx_rate=1.30):
+
+	quote = {'au': 
+
+				{'thrifty': lambda days, cheap: (days <= 10)*(31.35*cheap + 39.60*(1.0 - cheap)) + \
+												(days > 10)*(31.35*cheap + round(396.0/days,2)*(1.0 - cheap)),
+				 'avis': lambda days, cheap: (days <= 9)*(32.0*cheap + 44.0*(1.0 - cheap)) + \
+				 							 (days > 9)*(round(320.0/days,2)*cheap + round(440.0/days,2)*(1.0 - cheap)),
+				 'herz': lambda days, cheap: 26.99*cheap + 40.0*(1.0 - cheap),
+				 'europcar': lambda days, cheap: (days == 1)*(49.49*cheap + 59.14*(1.0 - cheap)) + \
+				 								 (2 <= days <= 3)*(37.41*cheap + 47.07*(1.0 - cheap)) + \
+				 								 (4 <= days <= 6)*(34.40*cheap + 43.44*(1.0 - cheap)) + \
+				 								 (days > 6)*(26.55*cheap + 36.20*(1.0 - cheap)),
+				 'budget': lambda days, cheap: (days < 10)*27.0 + (days >= 10)*round(270.0/days,2)}
+
+			'uk': 
+
+				{'thrifty': lambda days, cheap: (days < 4)*(8.81*cheap + 15.0*(1.0 - cheap)) + \
+												(4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
+												(days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
+				 'europcar': lambda days, cheap: (days < 4)*(8.81*cheap + 15.0*(1.0 - cheap)) + \
+				 								 (4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
+				 								 (days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap))
+
+				}
+			}
+
 
 	_rental_company = rental_company.lower().strip()
+	_country = country.lower().strip()
 
-	if _rental_company == 'thrifty':
+	print(quote['au']['budget'](days=4, cheap=True))
 
-		if days < 4:
-			perday = 8.81*cheapest + 15.0*(1.0 - cheapest)
-		elif 4 <= days < 14:
-			perday = 7.15*cheapest + 11.5*(1.0 - cheapest)
-		else:
-			perday = 6.05*cheapest + 9.05*(1.0 - cheapest)
+	# try:
+	# 	supported[_country][_rental_company]
+	# except:
+	# 	return None
 
-	elif _rental_company == 'europcar':
+	if _country == 'uk':
 
-		if days == 1:
-			perday = 23.0
-		elif 2 <= days <= 3:
-			perday = 20.5
-		elif 4 <= days <= 6:
-			perday = 18.0
-		elif days in (set(range(7, 14)) - {8}):
-			perday = 13.0
-		elif days == 8:
-			perday = 17.30
-		elif 14 <= days <= 27:
-			perday = 10.5
-		else:
-			perday = 8.0
+		fx_rate=1.30
 
-	elif _rental_company == 'herz':
+		if _rental_company == 'thrifty':
 
-		perday = 26.40
+			if days < 4:
+				perday = 8.81*cheapest + 15.0*(1.0 - cheapest)
+			elif 4 <= days < 14:
+				perday = 7.15*cheapest + 11.5*(1.0 - cheapest)
+			else:
+				perday = 6.05*cheapest + 9.05*(1.0 - cheapest)
 
-	elif _rental_company == 'sixt':
+		elif _rental_company == 'europcar':
 
-		if days < 6:
-			perday = 13.0*cheapest + 28.5*(1.0 - cheapest)
-		elif days == 6:
-			perday = 10.99*cheapest + 24.5*(1.0 - cheapest)
-		elif days == 7:
-			perday = 10.49*cheapest + 23.5*(1.0 - cheapest)
-		elif 8 <= days <= 14:
-			perday = 10.0*cheapest + 21.40*(1.0 - cheapest)
-		else:
-			perday = 10.0*cheapest + 20.30*(1.0 - cheapest)
+			if days == 1:
+				perday = 23.0
+			elif 2 <= days <= 3:
+				perday = 20.5
+			elif 4 <= days <= 6:
+				perday = 18.0
+			elif days in (set(range(7, 14)) - {8}):
+				perday = 13.0
+			elif days == 8:
+				perday = 17.30
+			elif 14 <= days <= 27:
+				perday = 10.5
+			else:
+				perday = 8.0
 
-	return days*perday
+		elif _rental_company == 'herz':
+
+			perday = 26.40
+
+		elif _rental_company == 'sixt':
+
+			if days < 6:
+				perday = 13.0*cheapest + 28.5*(1.0 - cheapest)
+			elif days == 6:
+				perday = 10.99*cheapest + 24.5*(1.0 - cheapest)
+			elif days == 7:
+				perday = 10.49*cheapest + 23.5*(1.0 - cheapest)
+			elif 8 <= days <= 14:
+				perday = 10.0*cheapest + 21.40*(1.0 - cheapest)
+			else:
+				perday = 10.0*cheapest + 20.30*(1.0 - cheapest)
+
+	elif _country == 'au':
+
+		fx_rate = 0.69
+
+		if _rental_company == 'thrifty':
+
+			if days <= 10:
+				perday = 31.35*cheapest + 39.60*(1.0 - cheapest)
+			else:
+				perday = 31.35*cheapest + round(396.0/days,2)*(1.0 - cheapest)
+
+		elif _rental_company == 'avis':
+
+			if days <= 9:
+				perday = 32.0*cheapest + 44.0*(1.0 - cheapest)
+			else:
+				perday = round(320.0/days,2)*cheapest + round(440.0/days,2)*(1.0 - cheapest)
+
+		elif _rental_company == 'herz':
+
+			perday = 26.99*cheapest + 40.0*(1.0 - cheapest)
+
+		elif _rental_company == 'europcar':
+
+			if days == 1:
+				perday = 49.49*cheapest + 59.14*(1.0 - cheapest)
+			elif 2 <= days <= 3:
+				perday = 37.41*cheapest + 47.07*(1.0 - cheapest)
+			elif 4 <= days <= 6:
+				perday = 34.40*cheapest + 43.44*(1.0 - cheapest)
+			else:
+				perday = 26.55*cheapest + 36.20*(1.0 - cheapest)
+
+		elif _rental_company == 'budget':
+
+			if days < 10:
+				perday = 27.0
+			else:
+				perday = round(270.0/days,2)
+
+	return days*perday*fx_rate
 
 class ModelTransformer(BaseEstimator, TransformerMixin):
 
@@ -399,43 +477,65 @@ if __name__ == '__main__':
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
 
-	pipe = Pipeline([('features', FeatureUnion([
+	features_std = FeatureUnion([
 										 
-										 ('ct', ColumnTransformer([('trip_details', 
-											 								   TripDetails(), 
-											 								  ['DurationDays', 'UpfrontDays', 'Cancelled']),
-										 ('prev_activities', PrevActivities(), 'prev_bks prev_qts prev_cnl prev_act_bk fst_act_bk last_act_same_cnt prev_act_same_cnt prev_diff_cnt'.split())]))
-							 			 # ('to_from_countries', ToFromCountries()), 
-							 			 # ('prev_activities', PrevActivities()),
-							 			 # ('vehicle_type', VehicleType()), 
-							 			 # ('cust_details', CustomerDetails()), 
-							 			 # ('payment_details', PaymentDetails()), 
-							 			 # ('quote_timing', QuoteTiming()), 
-							 			 # ('potential_savings', PotentialSavings())
-							 			 ])
-					 ),
-			   		('classifiers', FeatureUnion([('randomforest', RandomForestClassifier()),
-			   									  ('gradboosting', GradientBoostingClassifier()),
-			   									  ('kmeans', ModelTransformer(KMeans(n_clusters=2))),
-			   									  ('adaboost', AdaBoostClassifier())])),
+								('ct', ColumnTransformer([('trip_details', 
+									 						TripDetails(), 
+									 						['DurationDays', 'UpfrontDays', 'Cancelled']),
+														  ('prev_activities', PrevActivities(), 
+														  	['prev_bks', 'prev_qts', 'prev_cnl', 'prev_act_bk', 'fst_act_bk', 
+															'last_act_same_cnt', 'prev_act_same_cnt', 'prev_diff_cnt'])
+														]))
+								])
+							 	# ('to_from_countries', ToFromCountries()), 
+							 	# ('prev_activities', PrevActivities()),
+							 	# ('vehicle_type', VehicleType()), 
+							 	# ('cust_details', CustomerDetails()), 
+							 	# ('payment_details', PaymentDetails()), 
+							 	# ('quote_timing', QuoteTiming()), 
+							 	# ('potential_savings', PotentialSavings())
+							 	# ])
+
+	pipe = Pipeline([('features', features_std),
+			   		# ('classifiers', FeatureUnion([('randomforest', RandomForestClassifier()),
+			   		# 							  ('gradboosting', GradientBoostingClassifier()),
+			   		# 							  ('kmeans', ModelTransformer(KMeans(n_clusters=2))),
+			   		# 							  ('adaboost', AdaBoostClassifier())])),
 			   		('last_classifier', KNeighborsClassifier(n_neighbors=3))
 			   		])
 
-	pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
+	pipe.fit(X_train, y_train)
+	y_pred = pipe.predict(X_test)
 
-	pars = {'classifiers__randomforest__n_estimators': (50, 100, 150, 200, 300)}
+	print(f'accuracy: {accuracy_score(y_test, y_pred):06.4f}')
 
-	# grid_search = GridSearchCV(pp, pars, n_jobs=2, verbose=1, cv=4)
+	d = pd.DataFrame({'country': ['UK', 'UK'], 'days': [2,7]})
 
-	grid_search = GridSearchCV(pipe, pars, n_jobs=2, verbose=1, cv=4)
+	print(d)
 
-	grid_search.fit(X_train, y_train)
+	q = competitors_price(rental_company='Thrifty', 
+							country='UK', days=8, cheapest=True)
+	print(q)
 
-	y_h = grid_search.predict(X_test)
+	print(d.apply(lambda df: competitors_price(rental_company='Thrifty', 
+												country=df.country, 
+												days=df.days, cheapest=True), axis=1))
 
-	print(f'accuracy: {accuracy_score(y_test, y_h):06.4f}')
+	# pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
-	print(classification_report(y_test, y_h))
+	# pars = {'classifiers__randomforest__n_estimators': (50, 100, 150, 200, 300)}
+
+	# # grid_search = GridSearchCV(pp, pars, n_jobs=2, verbose=1, cv=4)
+
+	# grid_search = GridSearchCV(pipe, pars, n_jobs=2, verbose=1, cv=4)
+
+	# grid_search.fit(X_train, y_train)
+
+	# y_h = grid_search.predict(X_test)
+
+	# print(f'accuracy: {accuracy_score(y_test, y_h):06.4f}')
+
+	# print(classification_report(y_test, y_h))
 
 	# print(confusion_matrix(y_test, y_h))
 
