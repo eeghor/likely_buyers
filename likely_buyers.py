@@ -7,7 +7,7 @@ from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.cluster import KMeans
 import pandas as pd
 from collections import Counter, defaultdict
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, FunctionTransformer
 import arrow
 import numpy as np
 import json
@@ -15,31 +15,20 @@ import json
 from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.compose import ColumnTransformer
 
-outbound_uk = pd.read_csv('data/outbound_tourism_uk.csv')
-outbound_uk['share'] = round(outbound_uk['2018']/outbound_uk['2018'].sum(),4)
-outbound = defaultdict(lambda: defaultdict())
-
-for country, share in zip(outbound_uk['iso_code'].values, outbound_uk['share']):
-	outbound['uk'][country] = share
+outbound_trips = json.load(open('data/outbound_trips.json'))
 
 cnt_lefthand = pd.read_csv('data/countries_lefthand.csv')
 
-competitor_prices = {'AU': json.load(open('data/prices_pday_au.json'))}
+# competitor_prices = {'AU': json.load(open('data/prices_pday_au.json'))}
 
-cheapest_pday = {'AU': np.amin(np.vstack((np.array(competitor_prices['AU'][comp].get('0_pday')) 
-						for comp in competitor_prices['AU'] if comp != 'rentalcover')), axis=0)}
+# cheapest_pday = {'AU': np.amin(np.vstack((np.array(competitor_prices['AU'][comp].get('0_pday')) 
+# 						for comp in competitor_prices['AU'] if comp != 'rentalcover')), axis=0)}
 
+def competitors_price(company, country, days, cheap=True):
 
-# # popular touristic destinations
-# touristic_dests = {'UK': ['ES', 'FR', 'IT', 'US', 'IE', 'PT', 'DE', 'NL', 'PL', 'GR'],
-# 					'AU': ['ID', 'NZ', 'US', 'TH', 'IN', 'CN', 'UK', 'SG', 'JP', 'MY', 'HK', 'FJ', 'KR'],
-# 					'NZ': ['AU', 'US', 'FJ', 'UK', 'CN'],
-# 					'US': ['IN', 'JP', 'CN', 'TW', 'TH', 'PH', 'BH', 'DO', 'JA', 'CR', 'CZ', 'HU', 'PL',
-# 							'AT', 'FR', 'DE', 'IE', 'IS', 'IT', 'NL', 'ES', 'UK', 'IL', 'AU', 'CO'],
-# 							'RU': ['TR', 'DE', 'TH', 'IT', 'ES', 'AE', 'CY', 'GR', 'TN', 'VN','FR',
-# 							'CZ', 'IL', 'ME', 'AT', 'NL', 'US']}
-
-def competitors_price(rental_company, country, days, cheapest=True, fx_rate=1.30):
+	"""
+	returns a quote for extra insurance from selected rental companies; the amount is in USD
+	"""
 
 	quote = {'au': 
 
@@ -52,7 +41,7 @@ def competitors_price(rental_company, country, days, cheapest=True, fx_rate=1.30
 				 								 (2 <= days <= 3)*(37.41*cheap + 47.07*(1.0 - cheap)) + \
 				 								 (4 <= days <= 6)*(34.40*cheap + 43.44*(1.0 - cheap)) + \
 				 								 (days > 6)*(26.55*cheap + 36.20*(1.0 - cheap)),
-				 'budget': lambda days, cheap: (days < 10)*27.0 + (days >= 10)*round(270.0/days,2)}
+				 'budget': lambda days, cheap: (days < 10)*27.0 + (days >= 10)*round(270.0/days,2)},
 
 			'uk': 
 
@@ -61,110 +50,34 @@ def competitors_price(rental_company, country, days, cheapest=True, fx_rate=1.30
 												(days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
 				 'europcar': lambda days, cheap: (days < 4)*(8.81*cheap + 15.0*(1.0 - cheap)) + \
 				 								 (4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
-				 								 (days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap))
+				 								 (days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
+				 'herz': lambda days, cheap: 26.40,
+				 'sixt': lambda days, cheap: (days < 6)*(13.0*cheap + 28.5*(1.0 - cheap)) + \
+				 							 (days == 6)*(10.99*cheap + 24.5*(1.0 - cheap)) + \
+				 							 (days == 7)*(10.49*cheap + 23.5*(1.0 - cheap)) + \
+				 							 (8 <= days <= 14)*(10.0*cheap + 21.40*(1.0 - cheap)) + \
+				 							 (days > 14)*(10.0*cheap + 20.30*(1.0 - cheap))
+				},
 
-				}
+			'es':
+
+				{'europcar': lambda days, cheap: (days < 5)*(26.21*cheap + 37.21*(1.0 - cheap)) + \
+												 (5 <= days <= 7)*(22.80*cheap + 31.21*(1.0 - cheap)) + \
+												 (8 <= days <= 15)*(20.20*cheap + 24.32*(1.0 - cheap)) + \
+												 (days > 15)*(17.18*cheap + 17.36*(1.0 - cheap))}
 			}
 
+	xch_to_usd = {'au': 0.69,
+				  'uk': 1.30,
+				  'es': 1.11}
 
-	_rental_company = rental_company.lower().strip()
+	_company = company.lower().strip()
 	_country = country.lower().strip()
 
-	print(quote['au']['budget'](days=4, cheap=True))
-
-	# try:
-	# 	supported[_country][_rental_company]
-	# except:
-	# 	return None
-
-	if _country == 'uk':
-
-		fx_rate=1.30
-
-		if _rental_company == 'thrifty':
-
-			if days < 4:
-				perday = 8.81*cheapest + 15.0*(1.0 - cheapest)
-			elif 4 <= days < 14:
-				perday = 7.15*cheapest + 11.5*(1.0 - cheapest)
-			else:
-				perday = 6.05*cheapest + 9.05*(1.0 - cheapest)
-
-		elif _rental_company == 'europcar':
-
-			if days == 1:
-				perday = 23.0
-			elif 2 <= days <= 3:
-				perday = 20.5
-			elif 4 <= days <= 6:
-				perday = 18.0
-			elif days in (set(range(7, 14)) - {8}):
-				perday = 13.0
-			elif days == 8:
-				perday = 17.30
-			elif 14 <= days <= 27:
-				perday = 10.5
-			else:
-				perday = 8.0
-
-		elif _rental_company == 'herz':
-
-			perday = 26.40
-
-		elif _rental_company == 'sixt':
-
-			if days < 6:
-				perday = 13.0*cheapest + 28.5*(1.0 - cheapest)
-			elif days == 6:
-				perday = 10.99*cheapest + 24.5*(1.0 - cheapest)
-			elif days == 7:
-				perday = 10.49*cheapest + 23.5*(1.0 - cheapest)
-			elif 8 <= days <= 14:
-				perday = 10.0*cheapest + 21.40*(1.0 - cheapest)
-			else:
-				perday = 10.0*cheapest + 20.30*(1.0 - cheapest)
-
-	elif _country == 'au':
-
-		fx_rate = 0.69
-
-		if _rental_company == 'thrifty':
-
-			if days <= 10:
-				perday = 31.35*cheapest + 39.60*(1.0 - cheapest)
-			else:
-				perday = 31.35*cheapest + round(396.0/days,2)*(1.0 - cheapest)
-
-		elif _rental_company == 'avis':
-
-			if days <= 9:
-				perday = 32.0*cheapest + 44.0*(1.0 - cheapest)
-			else:
-				perday = round(320.0/days,2)*cheapest + round(440.0/days,2)*(1.0 - cheapest)
-
-		elif _rental_company == 'herz':
-
-			perday = 26.99*cheapest + 40.0*(1.0 - cheapest)
-
-		elif _rental_company == 'europcar':
-
-			if days == 1:
-				perday = 49.49*cheapest + 59.14*(1.0 - cheapest)
-			elif 2 <= days <= 3:
-				perday = 37.41*cheapest + 47.07*(1.0 - cheapest)
-			elif 4 <= days <= 6:
-				perday = 34.40*cheapest + 43.44*(1.0 - cheapest)
-			else:
-				perday = 26.55*cheapest + 36.20*(1.0 - cheapest)
-
-		elif _rental_company == 'budget':
-
-			if days < 10:
-				perday = 27.0
-			else:
-				perday = round(270.0/days,2)
-
-	return days*perday*fx_rate
+	try:
+		return round(xch_to_usd[_country]*quote[_country][_company](days, cheap)*days,2)
+	except:
+		return None
 
 class ModelTransformer(BaseEstimator, TransformerMixin):
 
@@ -178,17 +91,14 @@ class ModelTransformer(BaseEstimator, TransformerMixin):
     def transform(self, X, **transform_params):
         return self.model.predict(X)
 
-class VehicleType(BaseEstimator, TransformerMixin):
+class ColumnAsIs(BaseEstimator, TransformerMixin):
 
 	"""
-	what sort of a vehicle a customer was interested in
+	does nothing, simply returns a column
 	"""
 
 	def transform(self, X):
-
-		veh_type_cols = 'isCar is4x4 isCamper isMinibus isMotorHome'.split()
-
-		return X[veh_type_cols]
+		return X
 
 	def fit(self, X, y=None):
 		return self
@@ -204,48 +114,36 @@ class PotentialSavings(BaseEstimator, TransformerMixin):
 
 		savings = []
 
-		for i, (cnt, ndays, usd_paid) in enumerate(zip(X['ToCountry'], X['DurationDays'], X['Paid'])):
-			if (cnt in cheapest_pday):
-				use_price_perday = cheapest_pday[cnt][ndays] if ndays < 21 else cheapest_pday[cnt][-1]
-				savings.append(use_price_perday*ndays*0.69 - usd_paid)
-			else:
-				savings.append(0)
+		# for i, (cnt, ndays, usd_paid) in enumerate(zip(X['ToCountry'], X['DurationDays'], X['Paid'])):
+		# 	if (cnt in cheapest_pday):
+		# 		use_price_perday = cheapest_pday[cnt][ndays] if ndays < 21 else cheapest_pday[cnt][-1]
+		# 		savings.append(use_price_perday*ndays*0.69 - usd_paid)
+		# 	else:
+		# 		savings.append(0)
 
 
-		return pd.DataFrame({'savings': savings})
-
-	def fit(self, X, y=None):
-		return self
-
-class TripDetails(BaseEstimator, TransformerMixin):
-
-	"""
-	available trip details
-	"""
-
-	def transform(self, X):
-
-
-		# tr_details_cat = 'FromDayWeek ToDayWeek'.split()
-		# tr_details_asis = 'DurationDays UpfrontDays Cancelled'.split()
-
-		# return X[tr_details_asis]
-		return X
+		# return pd.DataFrame({'savings': savings})
 
 	def fit(self, X, y=None):
 		return self
 
-class PrevActivities(BaseEstimator, TransformerMixin):
+class CountryIsLeftHand(BaseEstimator, TransformerMixin):
 
 	"""
-	available trip details
+	returns 1 if a country is left-hand driving and 0 otherwise
 	"""
 
 	def transform(self, X):
 
-		# pa_cols = 'prev_bks prev_qts prev_cnl prev_act_bk fst_act_bk last_act_same_cnt prev_act_same_cnt prev_diff_cnt'.split()
+		countries_lefthand = ['AG', 'AU', 'BB', 'BD', 'BN', 'BS', 'BT', 'BW', 'CY', 'DM',
+					  	  	  'FJ', 'GB', 'GD', 'GY', 'ID', 'IE', 'IN', 'JM', 'JP', 'KE',  
+					  	  	  'KI', 'KN', 'LC', 'LK', 'LS', 'MT', 'MU', 'MV', 'MW', 'MY',  
+					  	  	  'MZ', 'NA', 'NP',  
+					  	  	  'NR', 'NZ', 'PG', 'PK', 'SB', 'SC', 'SG', 'SR', 
+					  	  	  'SZ', 'TH', 'TO', 'TP', 'TT',  
+					  	  	  'TV', 'TZ', 'UG', 'VC', 'WS', 'ZA', 'ZM', 'ZW']
 
-		return X
+		return X.isin(countries_lefthand).astype(int)
 
 	def fit(self, X, y=None):
 		return self
@@ -333,21 +231,6 @@ class CustomerDetails(BaseEstimator, TransformerMixin):
 				s[nm] = 0
 
 		return s[lang_names]
-
-	def fit(self, X, y=None):
-		return self
-
-class PaymentDetails(BaseEstimator, TransformerMixin):
-
-	"""
-	potential or actual payment related: how much in USD was the quote, was there the permanent coupon
-	"""
-
-	def transform(self, X):
-
-		paym_cols = 'Paid Coupon'.split()
-
-		return X[paym_cols]
 
 	def fit(self, X, y=None):
 		return self
@@ -452,9 +335,15 @@ class DataLoader:
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='B2C_Rentalcover_08JAN2020.csv'):
+	def load(self, file='B2C_Rentalcover_08JAN2020.csv', countries=None):
 
 		self.data = pd.read_csv('data/' + file, parse_dates=self.cols_to_parse_date)
+
+		if countries:
+			self.data = self.data[self.data['ResCountry'].isin(countries)]
+
+		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
+										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
 
 		print(f'{len(self.data):,} rows')
 		print(f'{self.data["CustomerId"].nunique():,} customer ids')
@@ -468,7 +357,7 @@ class DataLoader:
 
 if __name__ == '__main__':
 	
-	dl = DataLoader().load()
+	dl = DataLoader().load(countries=['AU'])
 
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
@@ -480,46 +369,48 @@ if __name__ == '__main__':
 	features_std = FeatureUnion([
 										 
 								('ct', ColumnTransformer([('trip_details', 
-									 						TripDetails(), 
-									 						['DurationDays', 'UpfrontDays', 'Cancelled']),
-														  ('prev_activities', PrevActivities(), 
-														  	['prev_bks', 'prev_qts', 'prev_cnl', 'prev_act_bk', 'fst_act_bk', 
-															'last_act_same_cnt', 'prev_act_same_cnt', 'prev_diff_cnt'])
+									 							ColumnAsIs(), 
+									 							['DurationDays', 'UpfrontDays', 'Cancelled']),
+														  ('tocountry_lefthand',
+														  		CountryIsLeftHand(),
+														  		['ToCountry']),
+														  ('rescountry_lefthand',
+														  		CountryIsLeftHand(),
+														  		['ResCountry']),
+														  ('vehicle_type', 
+														  		ColumnAsIs(), 
+														  		['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']),
+														  ('dest_popul', 
+														  		ColumnAsIs(), 
+														  		['dest_popul']),
+														  ('prev_activities', 
+														  		ColumnAsIs(), 
+														  		['prev_bks', 'prev_qts', 'prev_cnl', 'prev_act_bk', 'fst_act_bk', 
+																'last_act_same_cnt', 'prev_act_same_cnt', 'prev_diff_cnt']),
+														  ('payment_details', 
+														  		ColumnAsIs(), 
+														  		['Paid', 'Coupon'])
 														]))
 								])
 							 	# ('to_from_countries', ToFromCountries()), 
-							 	# ('prev_activities', PrevActivities()),
-							 	# ('vehicle_type', VehicleType()), 
 							 	# ('cust_details', CustomerDetails()), 
-							 	# ('payment_details', PaymentDetails()), 
 							 	# ('quote_timing', QuoteTiming()), 
 							 	# ('potential_savings', PotentialSavings())
 							 	# ])
 
 	pipe = Pipeline([('features', features_std),
-			   		# ('classifiers', FeatureUnion([('randomforest', RandomForestClassifier()),
-			   		# 							  ('gradboosting', GradientBoostingClassifier()),
-			   		# 							  ('kmeans', ModelTransformer(KMeans(n_clusters=2))),
-			   		# 							  ('adaboost', AdaBoostClassifier())])),
-			   		('last_classifier', KNeighborsClassifier(n_neighbors=3))
-			   		])
+			   		 ('randomforest', RandomForestClassifier())])
 
 	pipe.fit(X_train, y_train)
+
 	y_pred = pipe.predict(X_test)
 
 	print(f'accuracy: {accuracy_score(y_test, y_pred):06.4f}')
 
-	d = pd.DataFrame({'country': ['UK', 'UK'], 'days': [2,7]})
 
-	print(d)
-
-	q = competitors_price(rental_company='Thrifty', 
-							country='UK', days=8, cheapest=True)
-	print(q)
-
-	print(d.apply(lambda df: competitors_price(rental_company='Thrifty', 
-												country=df.country, 
-												days=df.days, cheapest=True), axis=1))
+	# print(d.apply(lambda df: competitors_price(company='eURopcar', 
+	# 											country=df.country, 
+	# 											days=df.days, cheap=True), axis=1))
 
 	# pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
