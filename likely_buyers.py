@@ -19,11 +19,6 @@ from sklearn.compose import ColumnTransformer
 outbound_trips = json.load(open('data/outbound_trips.json'))
 cnt_lefthand = pd.read_csv('data/countries_lefthand.csv')
 
-# competitor_prices = {'AU': json.load(open('data/prices_pday_au.json'))}
-
-# cheapest_pday = {'AU': np.amin(np.vstack((np.array(competitor_prices['AU'][comp].get('0_pday')) 
-# 						for comp in competitor_prices['AU'] if comp != 'rentalcover')), axis=0)}
-
 def competitors_price(company, country, days, cheap=True):
 
 	"""
@@ -72,6 +67,10 @@ def competitors_price(company, country, days, cheap=True):
 				  'es': 1.11}
 
 	_company = company.lower().strip()
+
+	if str(country).lower().strip() == 'nan':
+		return None
+
 	_country = country.lower().strip()
 
 	try:
@@ -174,9 +173,10 @@ class DataLoader:
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='B2C_Rentalcover_08JAN2020.csv', countries=None):
+	def load(self, file='B2C_Rentalcover_14JAN2020.csv', countries=None):
 
-		self.data = pd.read_csv('data/' + file, parse_dates=self.cols_to_parse_date)
+		self.data = pd.read_csv('data/' + file, parse_dates=self.cols_to_parse_date, 
+													dtype={'ResCountry': str, 'ToCountry': str})
 
 		bkcount_to = Counter(self.data[self.data['isBooking']==1]['ToCountry'])
 		tot_bookings = sum(bkcount_to.values())
@@ -188,6 +188,11 @@ class DataLoader:
 
 		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
 										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
+ 
+		self.data['europcar_price'] = self.data[['ToCountry', 'DurationDays']] \
+						.apply(lambda _: competitors_price(company='europcar', country=_[0], days=_[1]), axis=1)
+
+		self.data['europcar_price'] = self.data['europcar_price'].where(self.data['europcar_price'].notnull(), self.data['Paid']*1.5)
 
 		print(f'{len(self.data):,} rows')
 		print(f'{self.data["CustomerId"].nunique():,} customer ids')
@@ -251,8 +256,6 @@ if __name__ == '__main__':
 														  		['Paid', 'Coupon'])
 														]))
 								])
-							 	# ('potential_savings', PotentialSavings())
-							 	# ])
 
 	pipe = Pipeline([('features', features_std),
 			   		 ('randomforest', RandomForestClassifier())])
@@ -284,6 +287,6 @@ if __name__ == '__main__':
 
 	print(classification_report(y_test, y_pred))
 
-	# print(confusion_matrix(y_test, y_h))
+	print(confusion_matrix(y_test, y_pred))
 
 
