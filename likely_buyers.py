@@ -5,6 +5,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.cluster import KMeans
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import chi2
 import pandas as pd
 from collections import Counter, defaultdict
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
@@ -12,9 +14,11 @@ import arrow
 import numpy as np
 import json
 import calendar
+import time
 
 from sklearn.base import TransformerMixin, BaseEstimator
 from sklearn.compose import ColumnTransformer
+
 
 outbound_trips = json.load(open('data/outbound_trips.json'))
 cnt_lefthand = pd.read_csv('data/countries_lefthand.csv')
@@ -36,9 +40,10 @@ def competitors_price(company, country, days, cheap=True):
 				 								 (2 <= days <= 3)*(37.41*cheap + 47.07*(1.0 - cheap)) + \
 				 								 (4 <= days <= 6)*(34.40*cheap + 43.44*(1.0 - cheap)) + \
 				 								 (days > 6)*(26.55*cheap + 36.20*(1.0 - cheap)),
-				 'budget': lambda days, cheap: (days < 10)*27.0 + (days >= 10)*round(270.0/days,2)},
+				 'budget': lambda days, cheap: (days < 10)*27.0 + (10 <= days <=27)*round(270.0/days,2) + \
+				 							   (days >= 28)*6.0},
 
-			'uk': 
+			'gb': 
 
 				{'thrifty': lambda days, cheap: (days < 4)*(8.81*cheap + 15.0*(1.0 - cheap)) + \
 												(4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
@@ -63,20 +68,36 @@ def competitors_price(company, country, days, cheap=True):
 			}
 
 	xch_to_usd = {'au': 0.69,
-				  'uk': 1.30,
+				  'gb': 1.30,
 				  'es': 1.11}
 
-	_company = company.lower().strip()
+	_company = str(company).lower().strip()
+	_country = str(country).lower().strip()
 
-	if str(country).lower().strip() == 'nan':
+	if _country not in quote:
 		return None
 
-	_country = country.lower().strip()
-
-	try:
-		return round(xch_to_usd[_country]*quote[_country][_company](days, cheap)*days,2)
-	except:
+	if _company not in quote[_country]:
 		return None
+
+	if _country not in xch_to_usd:
+		return None
+
+	perday = None
+
+	if _company != 'all':	
+
+		try:
+			perday = quote[_country][_company](days=days, cheap=True)
+		except:
+			return None
+	else:
+		# find the cheapest price per day
+		print({quote[_country][comp](days=days, cheap=True) for comp in quote[_country]})
+		perday = min({quote[_country][comp](days=days, cheap=True) for comp in quote[_country]})
+
+	return round(xch_to_usd[_country]*perday*days,2)
+
 
 class ModelTransformer(BaseEstimator, TransformerMixin):
 
@@ -173,32 +194,43 @@ class DataLoader:
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='B2C_Rentalcover_14JAN2020.csv', countries=None):
+	def load(self, file='B2C_Rentalcover_14JAN2020_FULL.csv', countries=None):
 
-		self.data = pd.read_csv('data/' + file, parse_dates=self.cols_to_parse_date, 
-													dtype={'ResCountry': str, 'ToCountry': str})
+		self.data = pd.read_csv('data/' + file, 
+								parse_dates=self.cols_to_parse_date, 
+								keep_default_na=False)  # this one is needed to handle Namibia (iso code NA)
 
 		bkcount_to = Counter(self.data[self.data['isBooking']==1]['ToCountry'])
 		tot_bookings = sum(bkcount_to.values())
 		self.bkscore_to = {c: round(bkcount_to[c]/tot_bookings,3) for c in bkcount_to}
 
 		if countries:
-			print(f'only customers from {", ".join(countries)}')
+
+			print(f'--- filter: only customers from {" * ".join(countries)}')
 			self.data = self.data[self.data['ResCountry'].isin(countries)]
+
+		self.data = self.data.drop_duplicates(['CustomerId', 'CreatedOn'])
 
 		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
 										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
- 
-		self.data['europcar_price'] = self.data[['ToCountry', 'DurationDays']] \
-						.apply(lambda _: competitors_price(company='europcar', country=_[0], days=_[1]), axis=1)
 
-		self.data['europcar_price'] = self.data['europcar_price'].where(self.data['europcar_price'].notnull(), self.data['Paid']*1.5)
+		
 
-		print(f'{len(self.data):,} rows')
-		print(f'{self.data["CustomerId"].nunique():,} customer ids')
-		print(f'{self.data["Reference"].nunique():,} references')
-		print(f'{len(self.data[self.data["isBooking"] == 1]):,} bookings')
-		print(f'{len(self.data[self.data["isBooking"] == 0]):,} quotes')
+		self.data['best_competitor_price'] = self.data[['ToCountry', 'DurationDays']] \
+						.apply(lambda _: competitors_price(company='all', country=_[0], days=_[1]), axis=1)
+
+		self.data['best_competitor_price'] = self.data['best_competitor_price'].where(self.data['best_competitor_price'].notnull(), self.data['Paid']*1.5)
+
+		self.data_summary = {'rows': len(self.data), 
+							 'cids': self.data['CustomerId'].nunique(),
+							 'refs': self.data['Reference'].nunique(),
+							 'books': self.data[self.data['isBooking'] == 1]['Reference'].nunique(),
+							 'quots': self.data[self.data['isBooking'] == 0]['Reference'].nunique()}
+
+		self.data_summary.update({'quots,%': round(100.0*self.data_summary['quots']/self.data_summary['refs'],2)})
+
+		for _ in self.data_summary:
+			print(f'{_}: {self.data_summary[_]:,}')
 
 		self.data = self.data.drop(self.cols_to_drop, axis=1).fillna(0)
 
@@ -206,14 +238,18 @@ class DataLoader:
 
 if __name__ == '__main__':
 	
-	dl = DataLoader().load(countries=['AU'])
+	dl = DataLoader().load(countries=['IL'])
+
+	# for cntr in 'GB AU ES'.split():
+	# 	print(f'lowest price in {cntr} for 6 days: ', competitors_price(company=None, country=cntr, days=6, cheap=True))
 
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
 
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=278)
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
+	print(f'quotes in training/test set {len(y_train) - sum(y_train):,}/{len(y_test) - sum(y_test):,}')
 
 	features_std = FeatureUnion([
 										 
@@ -229,6 +265,12 @@ if __name__ == '__main__':
 														  ('quote_day', 
 									 							OneHotEncoder(handle_unknown='ignore'), 
 									 							['QuoteDay']),
+														  ('res_country', 
+									 							OneHotEncoder(handle_unknown='ignore'), 
+									 							['ResCountry']),
+														  ('to_country', 
+									 							OneHotEncoder(handle_unknown='ignore'), 
+									 							['ToCountry']),
 														  ('tocountry_lefthand',
 														  		CountryIsLeftHand(),
 														  		['ToCountry']),
@@ -258,13 +300,20 @@ if __name__ == '__main__':
 								])
 
 	pipe = Pipeline([('features', features_std),
-			   		 ('randomforest', RandomForestClassifier())])
+					 ('feat_select', SelectKBest(chi2, k=20)),
+			   		  ('randomforest', RandomForestClassifier())])
 
+	t0 = time.time()
 	pipe.fit(X_train, y_train)
+	dt = time.time() - t0
+
+	m, s = divmod(dt, 60)
+
+	print(f'time to fit: {m:02.0f}:{s:02.0f}')
+
+	# print(pipe.named_steps['randomforest'].feature_importances_)
 
 	y_pred = pipe.predict(X_test)
-
-	print(f'accuracy: {accuracy_score(y_test, y_pred):06.4f}')
 
 
 	# print(d.apply(lambda df: competitors_price(company='eURopcar', 
@@ -286,7 +335,7 @@ if __name__ == '__main__':
 	# print(f'accuracy: {accuracy_score(y_test, y_h):06.4f}')
 
 	print(classification_report(y_test, y_pred))
-
+	print('---- confusion matrix:')
 	print(confusion_matrix(y_test, y_pred))
 
 
