@@ -9,7 +9,7 @@ from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
 import pandas as pd
 from collections import Counter, defaultdict
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransformer, Normalizer
 import arrow
 import numpy as np
 import json
@@ -99,7 +99,7 @@ class ModelTransformer(BaseEstimator, TransformerMixin):
 		self.model.fit(*args, **kwargs)
 		return self
 
-	def transform(self, X, **transform_params):
+	def transform(self, X, **kwargs):
 		return self.model.predict(X)
 
 class ColumnAsIs(BaseEstimator, TransformerMixin):
@@ -110,30 +110,6 @@ class ColumnAsIs(BaseEstimator, TransformerMixin):
 
 	def transform(self, X):
 		return X
-
-	def fit(self, X, y=None):
-		return self
-
-class PotentialSavings(BaseEstimator, TransformerMixin):
-
-	"""
-	potential savings if a customer decides to accept the quoted price compared to the lowest
-	competitor price
-	"""
-
-	def transform(self, X):
-
-		savings = []
-
-		# for i, (cnt, ndays, usd_paid) in enumerate(zip(X['ToCountry'], X['DurationDays'], X['Paid'])):
-		# 	if (cnt in cheapest_pday):
-		# 		use_price_perday = cheapest_pday[cnt][ndays] if ndays < 21 else cheapest_pday[cnt][-1]
-		# 		savings.append(use_price_perday*ndays*0.69 - usd_paid)
-		# 	else:
-		# 		savings.append(0)
-
-
-		# return pd.DataFrame({'savings': savings})
 
 	def fit(self, X, y=None):
 		return self
@@ -281,9 +257,9 @@ if __name__ == '__main__':
 																ColumnAsIs(), 
 																['prev_bks', 'prev_qts', 'prev_cnl', 'prev_act_bk', 'fst_act_bk', 
 																'last_act_same_cnt', 'prev_act_same_cnt', 'prev_diff_cnt']),
-														  ('payment_details', 
-																ColumnAsIs(), 
-																['Paid', 'Coupon']),
+														  ('payment_details',
+														  		ColumnAsIs(),
+																['Paid']),
 														  ('savings', 
 																ColumnAsIs(), 
 																['savings'])
@@ -305,11 +281,6 @@ if __name__ == '__main__':
 	# print(pipe.named_steps['randomforest'].feature_importances_)
 
 	y_pred = pipe.predict(X_test)
-
-
-	# print(d.apply(lambda df: competitors_price(company='eURopcar', 
-	# 											country=df.country, 
-	# 											days=df.days, cheap=True), axis=1))
 
 	# pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
