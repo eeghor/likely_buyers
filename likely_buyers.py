@@ -28,20 +28,20 @@ def competitors_price(company, country, days, cheap=True):
 	"""
 	returns a quote for extra insurance from selected rental companies; the amount is in USD
 	"""
-
+	
 	quote = {'au': 
 
 				{'thrifty': lambda days, cheap: (days <= 10)*(31.35*cheap + 39.60*(1.0 - cheap)) + \
 												(days > 10)*(31.35*cheap + round(396.0/days,2)*(1.0 - cheap)),
 				 'avis': lambda days, cheap: (days <= 9)*(32.0*cheap + 44.0*(1.0 - cheap)) + \
-				 							 (days > 9)*(round(320.0/days,2)*cheap + round(440.0/days,2)*(1.0 - cheap)),
+											 (days > 9)*(round(320.0/days,2)*cheap + round(440.0/days,2)*(1.0 - cheap)),
 				 'herz': lambda days, cheap: 26.99*cheap + 40.0*(1.0 - cheap),
 				 'europcar': lambda days, cheap: (days == 1)*(49.49*cheap + 59.14*(1.0 - cheap)) + \
-				 								 (2 <= days <= 3)*(37.41*cheap + 47.07*(1.0 - cheap)) + \
-				 								 (4 <= days <= 6)*(34.40*cheap + 43.44*(1.0 - cheap)) + \
-				 								 (days > 6)*(26.55*cheap + 36.20*(1.0 - cheap)),
+												 (2 <= days <= 3)*(37.41*cheap + 47.07*(1.0 - cheap)) + \
+												 (4 <= days <= 6)*(34.40*cheap + 43.44*(1.0 - cheap)) + \
+												 (days > 6)*(26.55*cheap + 36.20*(1.0 - cheap)),
 				 'budget': lambda days, cheap: (days < 10)*27.0 + (10 <= days <=27)*round(270.0/days,2) + \
-				 							   (days >= 28)*6.0},
+											   (days >= 28)*6.0},
 
 			'gb': 
 
@@ -49,14 +49,14 @@ def competitors_price(company, country, days, cheap=True):
 												(4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
 												(days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
 				 'europcar': lambda days, cheap: (days < 4)*(8.81*cheap + 15.0*(1.0 - cheap)) + \
-				 								 (4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
-				 								 (days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
+												 (4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
+												 (days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
 				 'herz': lambda days, cheap: 26.40,
 				 'sixt': lambda days, cheap: (days < 6)*(13.0*cheap + 28.5*(1.0 - cheap)) + \
-				 							 (days == 6)*(10.99*cheap + 24.5*(1.0 - cheap)) + \
-				 							 (days == 7)*(10.49*cheap + 23.5*(1.0 - cheap)) + \
-				 							 (8 <= days <= 14)*(10.0*cheap + 21.40*(1.0 - cheap)) + \
-				 							 (days > 14)*(10.0*cheap + 20.30*(1.0 - cheap))
+											 (days == 6)*(10.99*cheap + 24.5*(1.0 - cheap)) + \
+											 (days == 7)*(10.49*cheap + 23.5*(1.0 - cheap)) + \
+											 (8 <= days <= 14)*(10.0*cheap + 21.40*(1.0 - cheap)) + \
+											 (days > 14)*(10.0*cheap + 20.30*(1.0 - cheap))
 				},
 
 			'es':
@@ -70,46 +70,37 @@ def competitors_price(company, country, days, cheap=True):
 	xch_to_usd = {'au': 0.69,
 				  'gb': 1.30,
 				  'es': 1.11}
-
-	_company = str(company).lower().strip()
-	_country = str(country).lower().strip()
-
-	if _country not in quote:
+	
+	if not isinstance(country, str):
 		return None
-
-	if _company not in quote[_country]:
-		return None
-
-	if _country not in xch_to_usd:
-		return None
-
-	perday = None
-
-	if _company != 'all':	
-
+	
+	_c = country.lower().strip()
+	
+	if not company:
 		try:
-			perday = quote[_country][_company](days=days, cheap=True)
+			perday = min({quote[_c][comp](days=days, cheap=True) for comp in quote[_c]})
 		except:
 			return None
 	else:
-		# find the cheapest price per day
-		print({quote[_country][comp](days=days, cheap=True) for comp in quote[_country]})
-		perday = min({quote[_country][comp](days=days, cheap=True) for comp in quote[_country]})
-
-	return round(xch_to_usd[_country]*perday*days,2)
+		try:
+			perday = quote[_c][company.lower().strip()](days=days, cheap=True)
+		except:
+			return None
+	
+	return round(xch_to_usd[_c]*perday*days,2)
 
 
 class ModelTransformer(BaseEstimator, TransformerMixin):
 
-    def __init__(self, model):
-        self.model = model
+	def __init__(self, model):
+		self.model = model
 
-    def fit(self, *args, **kwargs):
-        self.model.fit(*args, **kwargs)
-        return self
+	def fit(self, *args, **kwargs):
+		self.model.fit(*args, **kwargs)
+		return self
 
-    def transform(self, X, **transform_params):
-        return self.model.predict(X)
+	def transform(self, X, **transform_params):
+		return self.model.predict(X)
 
 class ColumnAsIs(BaseEstimator, TransformerMixin):
 
@@ -156,12 +147,12 @@ class CountryIsLeftHand(BaseEstimator, TransformerMixin):
 	def transform(self, X):
 
 		countries_lefthand = ['AG', 'AU', 'BB', 'BD', 'BN', 'BS', 'BT', 'BW', 'CY', 'DM',
-					  	  	  'FJ', 'GB', 'GD', 'GY', 'ID', 'IE', 'IN', 'JM', 'JP', 'KE',  
-					  	  	  'KI', 'KN', 'LC', 'LK', 'LS', 'MT', 'MU', 'MV', 'MW', 'MY',  
-					  	  	  'MZ', 'NA', 'NP',  
-					  	  	  'NR', 'NZ', 'PG', 'PK', 'SB', 'SC', 'SG', 'SR', 
-					  	  	  'SZ', 'TH', 'TO', 'TP', 'TT',  
-					  	  	  'TV', 'TZ', 'UG', 'VC', 'WS', 'ZA', 'ZM', 'ZW']
+							  'FJ', 'GB', 'GD', 'GY', 'ID', 'IE', 'IN', 'JM', 'JP', 'KE',  
+							  'KI', 'KN', 'LC', 'LK', 'LS', 'MT', 'MU', 'MV', 'MW', 'MY',  
+							  'MZ', 'NA', 'NP',  
+							  'NR', 'NZ', 'PG', 'PK', 'SB', 'SC', 'SG', 'SR', 
+							  'SZ', 'TH', 'TO', 'TP', 'TT',  
+							  'TV', 'TZ', 'UG', 'VC', 'WS', 'ZA', 'ZM', 'ZW']
 
 		return X.isin(countries_lefthand).astype(int)
 
@@ -206,7 +197,7 @@ class DataLoader:
 
 		if countries:
 
-			print(f'--- filter: only customers from {" * ".join(countries)}')
+			print(f'--- filter: only customers from {", ".join(countries)}')
 			self.data = self.data[self.data['ResCountry'].isin(countries)]
 
 		self.data = self.data.drop_duplicates(['CustomerId', 'CreatedOn'])
@@ -216,10 +207,10 @@ class DataLoader:
 
 		
 
-		self.data['best_competitor_price'] = self.data[['ToCountry', 'DurationDays']] \
-						.apply(lambda _: competitors_price(company='all', country=_[0], days=_[1]), axis=1)
-
-		self.data['best_competitor_price'] = self.data['best_competitor_price'].where(self.data['best_competitor_price'].notnull(), self.data['Paid']*1.5)
+		self.data['savings'] =  (self.data[['ToCountry', 'DurationDays']] \
+								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
+								.where(lambda _: _.notnull(), self.data['Paid']*1.5) -  self.data['Paid']) \
+								.apply(lambda x: round(max(x,0),2))
 
 		self.data_summary = {'rows': len(self.data), 
 							 'cids': self.data['CustomerId'].nunique(),
@@ -238,10 +229,7 @@ class DataLoader:
 
 if __name__ == '__main__':
 	
-	dl = DataLoader().load(countries=['IL'])
-
-	# for cntr in 'GB AU ES'.split():
-	# 	print(f'lowest price in {cntr} for 6 days: ', competitors_price(company=None, country=cntr, days=6, cheap=True))
+	dl = DataLoader().load(countries=['AU'])
 
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
@@ -254,54 +242,57 @@ if __name__ == '__main__':
 	features_std = FeatureUnion([
 										 
 								('ct', ColumnTransformer([('trip_details', 
-									 							ColumnAsIs(), 
-									 							['DurationDays', 'UpfrontDays', 'Cancelled']),
+																ColumnAsIs(), 
+																['DurationDays', 'UpfrontDays', 'Cancelled']),
 														  ('quote_month', 
-									 							OneHotEncoder(handle_unknown='ignore'), 
-									 							['QuoteMonth']),
+																OneHotEncoder(handle_unknown='ignore'), 
+																['QuoteMonth']),
 														  ('quote_week', 
-									 							OneHotEncoder(handle_unknown='ignore'), 
-									 							['QuoteWeek']),
+																OneHotEncoder(handle_unknown='ignore'), 
+																['QuoteWeek']),
 														  ('quote_day', 
-									 							OneHotEncoder(handle_unknown='ignore'), 
-									 							['QuoteDay']),
+																OneHotEncoder(handle_unknown='ignore'), 
+																['QuoteDay']),
 														  ('res_country', 
-									 							OneHotEncoder(handle_unknown='ignore'), 
-									 							['ResCountry']),
+																OneHotEncoder(handle_unknown='ignore'), 
+																['ResCountry']),
 														  ('to_country', 
-									 							OneHotEncoder(handle_unknown='ignore'), 
-									 							['ToCountry']),
+																OneHotEncoder(handle_unknown='ignore'), 
+																['ToCountry']),
 														  ('tocountry_lefthand',
-														  		CountryIsLeftHand(),
-														  		['ToCountry']),
+																CountryIsLeftHand(),
+																['ToCountry']),
 														  ('country_freq_booked',
-														  		CountryFrequentlyBooked(dl.bkscore_to),
-														  		['ToCountry']),
+																CountryFrequentlyBooked(dl.bkscore_to),
+																['ToCountry']),
 														  ('webs_lang',
-														  		OneHotEncoder(handle_unknown='ignore'),
-														  		['Lang']),
+																OneHotEncoder(handle_unknown='ignore'),
+																['Lang']),
 														  ('rescountry_lefthand',
-														  		CountryIsLeftHand(),
-														  		['ResCountry']),
+																CountryIsLeftHand(),
+																['ResCountry']),
 														  ('vehicle_type', 
-														  		ColumnAsIs(), 
-														  		['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']),
+																ColumnAsIs(), 
+																['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']),
 														  ('dest_popul', 
-														  		ColumnAsIs(), 
-														  		['dest_popul']),
+																ColumnAsIs(), 
+																['dest_popul']),
 														  ('prev_activities', 
-														  		ColumnAsIs(), 
-														  		['prev_bks', 'prev_qts', 'prev_cnl', 'prev_act_bk', 'fst_act_bk', 
+																ColumnAsIs(), 
+																['prev_bks', 'prev_qts', 'prev_cnl', 'prev_act_bk', 'fst_act_bk', 
 																'last_act_same_cnt', 'prev_act_same_cnt', 'prev_diff_cnt']),
 														  ('payment_details', 
-														  		ColumnAsIs(), 
-														  		['Paid', 'Coupon'])
+																ColumnAsIs(), 
+																['Paid', 'Coupon']),
+														  ('savings', 
+																ColumnAsIs(), 
+																['savings'])
 														]))
 								])
 
 	pipe = Pipeline([('features', features_std),
 					 ('feat_select', SelectKBest(chi2, k=20)),
-			   		  ('randomforest', RandomForestClassifier())])
+					  ('randomforest', RandomForestClassifier())])
 
 	t0 = time.time()
 	pipe.fit(X_train, y_train)
