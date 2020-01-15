@@ -13,7 +13,6 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler, FunctionTransfo
 import arrow
 import numpy as np
 import json
-import calendar
 import time
 
 from sklearn.base import TransformerMixin, BaseEstimator
@@ -166,7 +165,12 @@ class DataLoader:
 		self.data = pd.read_csv('data/' + file, 
 								parse_dates=self.cols_to_parse_date, 
 								dtype={'Paid': float},
-								keep_default_na=False)  # this one is needed to handle Namibia (iso code NA)
+								keep_default_na=False, na_values='') \
+								.fillna({'PrevActBooking': 2, # basically n/a
+										 'FirstActBooking': 2,
+										 'PrevActThisCnt': 2
+										})
+		self.data = self.data[self.data['UpfrontDays'] >= 0]
 
 		bkcount_to = Counter(self.data[self.data['isBooking']==1]['ToCountry'])
 		tot_bookings = sum(bkcount_to.values())
@@ -256,11 +260,16 @@ if __name__ == '__main__':
 																['dest_popul']),
 														  ('prev_activities', 
 																ColumnAsIs(), 
-																['PrevBks', 'PrevQts', 'PrevCnc', 'PrevActBooking',
-       															 'FirstActBooking', 'PrevActThisCnt', 'BeforeActThisCnt',
+																['PrevBks', 'PrevQts', 'PrevCnc',
+       															  'BeforeActThisCnt',
        															 'BeforeTotalCnt', 'BeforeTotalCurrs', 'BeforeTotalLangs']),
+														  ('prev_activities_categ',
+														  		OneHotEncoder(handle_unknown='ignore'),
+														  		['PrevActBooking',
+														  		 'FirstActBooking',
+														  		 'PrevActThisCnt']),
 														  ('payment_details',
-														  		ColumnAsIs(),u
+														  		Normalizer(),
 																['Paid']),
 														  ('savings', 
 																ColumnAsIs(), 
@@ -270,31 +279,33 @@ if __name__ == '__main__':
 
 	pipe = Pipeline([('features', features_std),
 					 ('feat_select', SelectKBest(chi2, k=20)),
-					  ('randomforest', RandomForestClassifier())])
+					 ('cls', GradientBoostingClassifier())])
 
-	t0 = time.time()
-	pipe.fit(X_train, y_train)
-	dt = time.time() - t0
+	# t0 = time.time()
+	# pipe.fit(X_train, y_train)
+	# dt = time.time() - t0
 
-	m, s = divmod(dt, 60)
+	# m, s = divmod(dt, 60)
 
-	print(f'time to fit: {m:02.0f}:{s:02.0f}')
+	# print(f'time to fit: {m:02.0f}:{s:02.0f}')
 
 	# print(pipe.named_steps['randomforest'].feature_importances_)
 
-	y_pred = pipe.predict(X_test)
+	# y_pred = pipe.predict(X_test)
 
 	# pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
-	# pars = {'classifiers__randomforest__n_estimators': (50, 100, 150, 200, 300)}
+	pars = {'cls__n_estimators': (100, 200, 300),
+			'cls__max_depth': (2,3,5,10),
+			'feat_select__k': (10,20,30,50)}
 
 	# # grid_search = GridSearchCV(pp, pars, n_jobs=2, verbose=1, cv=4)
 
-	# grid_search = GridSearchCV(pipe, pars, n_jobs=2, verbose=1, cv=4)
+	grid_search = GridSearchCV(pipe, pars, n_jobs=2, verbose=1, cv=4)
 
-	# grid_search.fit(X_train, y_train)
+	grid_search.fit(X_train, y_train)
 
-	# y_h = grid_search.predict(X_test)
+	y_pred = grid_search.predict(X_test)
 
 	# print(f'accuracy: {accuracy_score(y_test, y_h):06.4f}')
 
