@@ -161,10 +161,11 @@ class DataLoader:
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='B2C_Rentalcover_14JAN2020_FULL.csv', countries=None):
+	def load(self, file='B2C_Rentalcover_15JAN2020.csv', countries=None):
 
 		self.data = pd.read_csv('data/' + file, 
 								parse_dates=self.cols_to_parse_date, 
+								dtype={'Paid': float},
 								keep_default_na=False)  # this one is needed to handle Namibia (iso code NA)
 
 		bkcount_to = Counter(self.data[self.data['isBooking']==1]['ToCountry'])
@@ -243,7 +244,7 @@ if __name__ == '__main__':
 																['ToCountry']),
 														  ('webs_lang',
 																OneHotEncoder(handle_unknown='ignore'),
-																['Lang']),
+																['LanguageCode']),
 														  ('rescountry_lefthand',
 																CountryIsLeftHand(),
 																['ResCountry']),
@@ -255,10 +256,11 @@ if __name__ == '__main__':
 																['dest_popul']),
 														  ('prev_activities', 
 																ColumnAsIs(), 
-																['prev_bks', 'prev_qts', 'prev_cnl', 'prev_act_bk', 'fst_act_bk', 
-																'last_act_same_cnt', 'prev_act_same_cnt', 'prev_diff_cnt']),
+																['PrevBks', 'PrevQts', 'PrevCnc', 'PrevActBooking',
+       															 'FirstActBooking', 'PrevActThisCnt', 'BeforeActThisCnt',
+       															 'BeforeTotalCnt', 'BeforeTotalCurrs', 'BeforeTotalLangs']),
 														  ('payment_details',
-														  		ColumnAsIs(),
+														  		ColumnAsIs(),u
 																['Paid']),
 														  ('savings', 
 																ColumnAsIs(), 
