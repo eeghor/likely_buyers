@@ -32,13 +32,19 @@ def competitors_price(company, country, days, cheap=True):
 
 				{'thrifty': lambda days, cheap: (days <= 10)*(31.35*cheap + 39.60*(1.0 - cheap)) + \
 												(days > 10)*(31.35*cheap + round(396.0/days,2)*(1.0 - cheap)),
-				 'avis': lambda days, cheap: (days <= 9)*(32.0*cheap + 44.0*(1.0 - cheap)) + \
-											 (days > 9)*(round(320.0/days,2)*cheap + round(440.0/days,2)*(1.0 - cheap)),
+
+				 # this is Excess Reduction, last checked 16/01/2020
+				 'avis': lambda days, cheap: (days <= 10)*27.0 + \
+				 							 (11 <= days <= 27)*round(270.0/days,2) + \
+				 							 (days > 27)*6.0,
+
 				 'herz': lambda days, cheap: 26.99*cheap + 40.0*(1.0 - cheap),
+
 				 'europcar': lambda days, cheap: (days == 1)*(49.49*cheap + 59.14*(1.0 - cheap)) + \
 												 (2 <= days <= 3)*(37.41*cheap + 47.07*(1.0 - cheap)) + \
 												 (4 <= days <= 6)*(34.40*cheap + 43.44*(1.0 - cheap)) + \
 												 (days > 6)*(26.55*cheap + 36.20*(1.0 - cheap)),
+												 
 				 'budget': lambda days, cheap: (days < 10)*27.0 + (10 <= days <=27)*round(270.0/days,2) + \
 											   (days >= 28)*6.0},
 
@@ -160,17 +166,22 @@ class DataLoader:
 		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='B2C_Rentalcover_15JAN2020.csv', countries=None):
+	def load(self, file='train_before_last28.csv', countries=None):
 
 		self.data = pd.read_csv('data/' + file, 
 								parse_dates=self.cols_to_parse_date, 
 								dtype={'Paid': float},
-								keep_default_na=False, na_values='') \
-								.fillna({'PrevActBooking': 2, # basically n/a
-										 'FirstActBooking': 2,
-										 'PrevActThisCnt': 2
-										})
-		self.data = self.data[self.data['UpfrontDays'] >= 0]
+								keep_default_na=False, na_values='') 
+
+		self.test = pd.read_csv('data/last28.csv', parse_dates=self.cols_to_parse_date, 
+								dtype={'Paid': float},
+								keep_default_na=False)
+		# \
+		# 						.fillna({'PrevActBooking': 2, # basically n/a
+		# 								 'FirstActBooking': 2,
+		# 								 'PrevActThisCnt': 2
+		# 								})
+		# self.data = self.data[self.data['UpfrontDays'] >= 0]
 
 		bkcount_to = Counter(self.data[self.data['isBooking']==1]['ToCountry'])
 		tot_bookings = sum(bkcount_to.values())
@@ -185,12 +196,19 @@ class DataLoader:
 
 		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
 										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
+		self.test['dest_popul'] = self.test[['ResCountry', 'ToCountry']] \
+										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
 
 		
 
 		self.data['savings'] =  (self.data[['ToCountry', 'DurationDays']] \
 								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
 								.where(lambda _: _.notnull(), self.data['Paid']*1.5) -  self.data['Paid']) \
+								.apply(lambda x: round(max(x,0),2))
+
+		self.test['savings'] =  (self.test[['ToCountry', 'DurationDays']] \
+								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
+								.where(lambda _: _.notnull(), self.test['Paid']*1.5) -  self.test['Paid']) \
 								.apply(lambda x: round(max(x,0),2))
 
 		self.data_summary = {'rows': len(self.data), 
@@ -205,17 +223,24 @@ class DataLoader:
 			print(f'{_}: {self.data_summary[_]:,}')
 
 		self.data = self.data.drop(self.cols_to_drop, axis=1).fillna(0)
+		self.test = self.test.drop(self.cols_to_drop, axis=1).fillna(0)
 
 		return self
 
 if __name__ == '__main__':
 	
-	dl = DataLoader().load(countries=['AU'])
+	dl = DataLoader().load(countries=None)
 
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
 
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
+	# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
+
+	X_train = X
+	y_train = y
+
+	X_test = dl.test[[c for c in dl.test.columns if c != 'isBooking']]
+	y_test = dl.test['isBooking'].values
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
 	print(f'quotes in training/test set {len(y_train) - sum(y_train):,}/{len(y_test) - sum(y_test):,}')
@@ -296,8 +321,8 @@ if __name__ == '__main__':
 	# pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
 	pars = {'cls__n_estimators': (100, 200, 300),
-			'cls__max_depth': (2,3,5,10),
-			'feat_select__k': (10,20,30,50)}
+			'cls__max_depth': (2,3),
+			'feat_select__k': (20,30)}
 
 	# # grid_search = GridSearchCV(pp, pars, n_jobs=2, verbose=1, cv=4)
 
