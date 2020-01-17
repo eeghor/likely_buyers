@@ -163,19 +163,20 @@ class DataLoader:
 		"""
 		"""
 		
-		self.cols_to_parse_date = 'FromDate ToDate CreatedOn CreatedOnDate'.split()
+		self.cols_to_parse_date = []
 		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
-	def load(self, file='train_before_last28.csv', countries=None):
+	def load(self, file='rc_features_17JAN2020.csv', countries=None):
 
 		self.data = pd.read_csv('data/' + file, 
 								parse_dates=self.cols_to_parse_date, 
-								dtype={'Paid': float},
+								dtype={'TotalUSD': float, 
+										'Total': float},
 								keep_default_na=False, na_values='') 
 
-		self.test = pd.read_csv('data/last28.csv', parse_dates=self.cols_to_parse_date, 
-								dtype={'Paid': float},
-								keep_default_na=False)
+		# self.test = pd.read_csv('data/test_unfiltered.csv', parse_dates=self.cols_to_parse_date, 
+		# 						dtype={'TotalUSD': float},
+		# 						keep_default_na=False)
 		# \
 		# 						.fillna({'PrevActBooking': 2, # basically n/a
 		# 								 'FirstActBooking': 2,
@@ -191,25 +192,26 @@ class DataLoader:
 
 			print(f'--- filter: only customers from {", ".join(countries)}')
 			self.data = self.data[self.data['ResCountry'].isin(countries)]
+			# self.test = self.test[self.test['ResCountry'].isin(countries)]
 
-		self.data = self.data.drop_duplicates(['CustomerId', 'CreatedOn'])
+		self.data = self.data.drop_duplicates(['CustomerId', 'Reference'])
 
 		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
 										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
-		self.test['dest_popul'] = self.test[['ResCountry', 'ToCountry']] \
-										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
+		# self.test['dest_popul'] = self.test[['ResCountry', 'ToCountry']] \
+		# 								.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
 
 		
 
 		self.data['savings'] =  (self.data[['ToCountry', 'DurationDays']] \
 								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
-								.where(lambda _: _.notnull(), self.data['Paid']*1.5) -  self.data['Paid']) \
+								.where(lambda _: _.notnull(), self.data['TotalUSD']*1.5) -  self.data['TotalUSD']) \
 								.apply(lambda x: round(max(x,0),2))
 
-		self.test['savings'] =  (self.test[['ToCountry', 'DurationDays']] \
-								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
-								.where(lambda _: _.notnull(), self.test['Paid']*1.5) -  self.test['Paid']) \
-								.apply(lambda x: round(max(x,0),2))
+		# self.test['savings'] =  (self.test[['ToCountry', 'DurationDays']] \
+		# 						.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
+		# 						.where(lambda _: _.notnull(), self.test['TotalUSD']*1.5) -  self.test['TotalUSD']) \
+		# 						.apply(lambda x: round(max(x,0),2))
 
 		self.data_summary = {'rows': len(self.data), 
 							 'cids': self.data['CustomerId'].nunique(),
@@ -223,24 +225,24 @@ class DataLoader:
 			print(f'{_}: {self.data_summary[_]:,}')
 
 		self.data = self.data.drop(self.cols_to_drop, axis=1).fillna(0)
-		self.test = self.test.drop(self.cols_to_drop, axis=1).fillna(0)
+		# self.test = self.test.drop(self.cols_to_drop, axis=1).fillna(0)
 
 		return self
 
 if __name__ == '__main__':
 	
-	dl = DataLoader().load(countries=None)
+	dl = DataLoader().load(file='rc_features_17JAN2020.csv', countries=['GB'])
 
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
 
-	# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
 
-	X_train = X
-	y_train = y
+	# X_train = X
+	# y_train = y
 
-	X_test = dl.test[[c for c in dl.test.columns if c != 'isBooking']]
-	y_test = dl.test['isBooking'].values
+	# X_test = dl.test[[c for c in dl.test.columns if c != 'isBooking']]
+	# y_test = dl.test['isBooking'].values
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
 	print(f'quotes in training/test set {len(y_train) - sum(y_train):,}/{len(y_test) - sum(y_test):,}')
@@ -286,7 +288,7 @@ if __name__ == '__main__':
 														  ('prev_activities', 
 																ColumnAsIs(), 
 																['PrevBks', 'PrevQts', 'PrevCnc',
-       															  'BeforeActThisCnt',
+       															  'BeforeActThisCnt', 'PerdayUSD',
        															 'BeforeTotalCnt', 'BeforeTotalCurrs', 'BeforeTotalLangs']),
 														  ('prev_activities_categ',
 														  		OneHotEncoder(handle_unknown='ignore'),
@@ -295,7 +297,10 @@ if __name__ == '__main__':
 														  		 'PrevActThisCnt']),
 														  ('payment_details',
 														  		Normalizer(),
-																['Paid']),
+																['TotalUSD']),
+														  ('payment_details_local',
+														  		Normalizer(),
+																['Total']),
 														  ('savings', 
 																ColumnAsIs(), 
 																['savings'])
@@ -303,7 +308,7 @@ if __name__ == '__main__':
 								])
 
 	pipe = Pipeline([('features', features_std),
-					 ('feat_select', SelectKBest(chi2, k=20)),
+					 ('feat_select', SelectKBest(chi2, k=10)),
 					 ('cls', GradientBoostingClassifier())])
 
 	# t0 = time.time()
@@ -320,9 +325,9 @@ if __name__ == '__main__':
 
 	# pipe = make_pipeline(features, StandardScaler(), RandomForestClassifier())
 
-	pars = {'cls__n_estimators': (100, 200, 300),
+	pars = {'cls__n_estimators': (200, 300),
 			'cls__max_depth': (2,3),
-			'feat_select__k': (20,30)}
+			'feat_select__k': (10,20,50)}
 
 	# # grid_search = GridSearchCV(pp, pars, n_jobs=2, verbose=1, cv=4)
 
