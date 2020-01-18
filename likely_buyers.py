@@ -32,6 +32,7 @@ def competitors_price(company, country, days, cheap=True):
 
 				{'thrifty': lambda days, cheap: (days <= 10)*(31.35*cheap + 39.60*(1.0 - cheap)) + \
 												(days > 10)*(31.35*cheap + round(396.0/days,2)*(1.0 - cheap)),
+												
 
 				 # this is Excess Reduction, last checked 16/01/2020
 				 'avis': lambda days, cheap: (days <= 10)*27.0 + \
@@ -53,6 +54,7 @@ def competitors_price(company, country, days, cheap=True):
 				{'thrifty': lambda days, cheap: (days < 4)*(8.81*cheap + 15.0*(1.0 - cheap)) + \
 												(4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
 												(days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
+
 				 'europcar': lambda days, cheap: (days < 4)*(8.81*cheap + 15.0*(1.0 - cheap)) + \
 												 (4 <= days < 14)*(7.15*cheap + 11.5*(1.0 - cheap)) + \
 												 (days >= 14)*(6.05*cheap + 9.05*(1.0 - cheap)),
@@ -98,9 +100,11 @@ def competitors_price(company, country, days, cheap=True):
 class ModelTransformer(BaseEstimator, TransformerMixin):
 
 	def __init__(self, model):
+		print('got a model')
 		self.model = model
 
 	def fit(self, *args, **kwargs):
+		print('fitting model..')
 		self.model.fit(*args, **kwargs)
 		return self
 
@@ -309,7 +313,11 @@ if __name__ == '__main__':
 
 	pipe = Pipeline([('features', features_std),
 					 ('feat_select', SelectKBest(chi2, k=10)),
-					 ('cls', GradientBoostingClassifier())])
+					 FeatureUnion([
+					   ('cls', GradientBoostingClassifier()),
+					   ('cls1', RandomForestClassifier())
+					   			 ])
+					 ])
 
 	# t0 = time.time()
 	# pipe.fit(X_train, y_train)
