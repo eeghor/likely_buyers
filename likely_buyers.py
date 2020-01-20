@@ -30,9 +30,23 @@ def competitors_price(company, country, days, cheap=True):
 	
 	quote = {'au': 
 
+				# these are Premium and Ultimate protections
 				{'thrifty': lambda days, cheap: (days <= 10)*(31.35*cheap + 39.60*(1.0 - cheap)) + \
-												(days > 10)*(31.35*cheap + round(396.0/days,2)*(1.0 - cheap)),
-												
+												(10 < days <= 30)*round(396.0/days,2) + \
+												(days == 31)*round(435.60/days,2) + \
+												(days == 32)*round(475.20/days,2) + \
+												(days == 33)*round(514.80/days,2) + \
+												(days == 34)*round(554.40/days,2) + \
+												(days == 35)*round(594.00/days,2) + \
+												(days == 36)*round(633.60/days,2) + \
+												(days == 37)*round(673.20/days,2) + \
+												(days == 38)*round(712.80/days,2) + \
+												(days == 39)*round(752.40/days,2) + \
+												(days == 40)*round(792.00/days,2) + \
+												(days == 41)*round(792.00/days,2) + \
+												(days == 64)*round(950.40/days,2)
+												,
+
 
 				 # this is Excess Reduction, last checked 16/01/2020
 				 'avis': lambda days, cheap: (days <= 10)*27.0 + \
@@ -144,6 +158,36 @@ class CountryIsLeftHand(BaseEstimator, TransformerMixin):
 	def fit(self, X, y=None):
 		return self
 
+class CustomerFromSpendingCountry(BaseEstimator, TransformerMixin):
+
+	"""
+	returns 1 if a country is left-hand driving and 0 otherwise
+	"""
+
+	def transform(self, X):
+
+		spenders = ['CN', 'US', 'DE', 'GB', 'FR', 'AU', 'RU', 'CA', 'KO', 'IT']
+
+		return X.isin(spenders).astype(int)
+
+	def fit(self, X, y=None):
+		return self
+
+class TopTouristDestination(BaseEstimator, TransformerMixin):
+
+	"""
+	returns 1 if a country is left-hand driving and 0 otherwise
+	"""
+
+	def transform(self, X):
+
+		top_dests = ['FR', 'ES', 'US', 'CN', 'IT', 'TR', 'MX', 'DE', 'TH', 'GB']
+
+		return X.isin(top_dests).astype(int)
+
+	def fit(self, X, y=None):
+		return self
+
 class CountryFrequentlyBooked(BaseEstimator, TransformerMixin):
 
 	"""
@@ -166,56 +210,45 @@ class DataLoader:
 
 		"""
 		"""
-		
-		self.cols_to_parse_date = []
-		self.cols_to_drop = 'CustomerId BookingId Reference'.split()
 
 	def load(self, file='rc_features_17JAN2020.csv', countries=None):
 
 		self.data = pd.read_csv('data/' + file, 
-								parse_dates=self.cols_to_parse_date, 
 								dtype={'TotalUSD': float, 
 										'Total': float},
 								keep_default_na=False, na_values='') 
 
-		# self.test = pd.read_csv('data/test_unfiltered.csv', parse_dates=self.cols_to_parse_date, 
-		# 						dtype={'TotalUSD': float},
-		# 						keep_default_na=False)
-		# \
-		# 						.fillna({'PrevActBooking': 2, # basically n/a
-		# 								 'FirstActBooking': 2,
-		# 								 'PrevActThisCnt': 2
-		# 								})
-		# self.data = self.data[self.data['UpfrontDays'] >= 0]
-
-		bkcount_to = Counter(self.data[self.data['isBooking']==1]['ToCountry'])
-		tot_bookings = sum(bkcount_to.values())
-		self.bkscore_to = {c: round(bkcount_to[c]/tot_bookings,3) for c in bkcount_to}
-
 		if countries:
 
-			print(f'--- filter: only customers from {", ".join(countries)}')
+			print(f'--- customers from {", ".join(countries)} ---')
 			self.data = self.data[self.data['ResCountry'].isin(countries)]
-			# self.test = self.test[self.test['ResCountry'].isin(countries)]
 
+
+		target_col = 'isBooking'
+		train_test_col = 'CreatedLast30Days'
+
+		drop_cols = 'CustomerId Reference CreatedOn CreatedYear'.split()
+		feat_cols = set(self.data.columns) - set(drop_cols) - {target_col} - {train_test_col}
+
+		refs_test = set(self.data[self.data[train_test_col] == 1]['Reference'])
+		refs_train = set(self.data[self.data[train_test_col] == 0]['Reference'])
+
+		# last 30 days of data go into a test set
+		self.X_test = self.data[self.data['Reference'].isin(refs_test)][feat_cols]
+		self.y_test = self.data[self.data['Reference'].isin(refs_test)][target_col]
+
+		# the rest of the dataset is for training (train + validation)
+		self.data = self.data[self.data['Reference'].isin(refs_train)]
+		
 		self.data = self.data.drop_duplicates(['CustomerId', 'Reference'])
 
 		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
 										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
-		# self.test['dest_popul'] = self.test[['ResCountry', 'ToCountry']] \
-		# 								.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
-
-		
 
 		self.data['savings'] =  (self.data[['ToCountry', 'DurationDays']] \
 								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
 								.where(lambda _: _.notnull(), self.data['TotalUSD']*1.5) -  self.data['TotalUSD']) \
 								.apply(lambda x: round(max(x,0),2))
-
-		# self.test['savings'] =  (self.test[['ToCountry', 'DurationDays']] \
-		# 						.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
-		# 						.where(lambda _: _.notnull(), self.test['TotalUSD']*1.5) -  self.test['TotalUSD']) \
-		# 						.apply(lambda x: round(max(x,0),2))
 
 		self.data_summary = {'rows': len(self.data), 
 							 'cids': self.data['CustomerId'].nunique(),
@@ -228,28 +261,22 @@ class DataLoader:
 		for _ in self.data_summary:
 			print(f'{_}: {self.data_summary[_]:,}')
 
-		self.data = self.data.drop(self.cols_to_drop, axis=1).fillna(0)
-		# self.test = self.test.drop(self.cols_to_drop, axis=1).fillna(0)
+		self.data = self.data.drop(drop_cols, axis=1).fillna(0)
+		# self.test = self.test.drop(drop_cols, axis=1).fillna(0)
 
 		return self
 
 if __name__ == '__main__':
 	
-	dl = DataLoader().load(file='rc_features_17JAN2020.csv', countries=['GB'])
+	dl = DataLoader().load(file='RCB2C_features_20JAN2020.csv', countries=['GB'])
 
 	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
 	y = dl.data['isBooking'].values
 
-	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
+	X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
 
-	# X_train = X
-	# y_train = y
-
-	# X_test = dl.test[[c for c in dl.test.columns if c != 'isBooking']]
-	# y_test = dl.test['isBooking'].values
-
-	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_test):,}')
-	print(f'quotes in training/test set {len(y_train) - sum(y_train):,}/{len(y_test) - sum(y_test):,}')
+	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_val):,}')
+	print(f'quotes in training/test set {len(y_train) - sum(y_train):,}/{len(y_val) - sum(y_val):,}')
 
 	features_std = FeatureUnion([
 										 
@@ -274,15 +301,21 @@ if __name__ == '__main__':
 														  ('tocountry_lefthand',
 																CountryIsLeftHand(),
 																['ToCountry']),
-														  ('country_freq_booked',
-																CountryFrequentlyBooked(dl.bkscore_to),
-																['ToCountry']),
+														  # ('country_freq_booked',
+																# CountryFrequentlyBooked(dl.bkscore_to),
+																# ['ToCountry']),
 														  ('webs_lang',
 																OneHotEncoder(handle_unknown='ignore'),
 																['LanguageCode']),
 														  ('rescountry_lefthand',
 																CountryIsLeftHand(),
 																['ResCountry']),
+														  ('from_spender_country',
+																CustomerFromSpendingCountry(),
+																['ResCountry']),
+														  ('from_tourist_dest',
+																TopTouristDestination(),
+																['ToCountry']),
 														  ('vehicle_type', 
 																ColumnAsIs(), 
 																['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']),
@@ -313,10 +346,7 @@ if __name__ == '__main__':
 
 	pipe = Pipeline([('features', features_std),
 					 ('feat_select', SelectKBest(chi2, k=10)),
-					 FeatureUnion([
-					   ('cls', GradientBoostingClassifier()),
-					   ('cls1', RandomForestClassifier())
-					   			 ])
+					 ('cls', GradientBoostingClassifier())
 					 ])
 
 	# t0 = time.time()
@@ -343,12 +373,12 @@ if __name__ == '__main__':
 
 	grid_search.fit(X_train, y_train)
 
-	y_pred = grid_search.predict(X_test)
+	y_pred = grid_search.predict(dl.X_test)
 
 	# print(f'accuracy: {accuracy_score(y_test, y_h):06.4f}')
 
-	print(classification_report(y_test, y_pred))
+	print(classification_report(dl.y_test, y_pred))
 	print('---- confusion matrix:')
-	print(confusion_matrix(y_test, y_pred))
+	print(confusion_matrix(dl.y_test, y_pred))
 
 
