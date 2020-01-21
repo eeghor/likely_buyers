@@ -21,6 +21,7 @@ from sklearn.compose import ColumnTransformer
 
 outbound_trips = json.load(open('data/outbound_trips.json'))
 cnt_lefthand = pd.read_csv('data/countries_lefthand.csv')
+country_info = pd.read_csv('data/country_info.csv')
 
 def competitors_price(company, country, days, cheap=True):
 
@@ -33,18 +34,10 @@ def competitors_price(company, country, days, cheap=True):
 				# these are Premium and Ultimate protections
 				{'thrifty': lambda days, cheap: (days <= 10)*(31.35*cheap + 39.60*(1.0 - cheap)) + \
 												(10 < days <= 30)*round(396.0/days,2) + \
-												(days == 31)*round(435.60/days,2) + \
-												(days == 32)*round(475.20/days,2) + \
-												(days == 33)*round(514.80/days,2) + \
-												(days == 34)*round(554.40/days,2) + \
-												(days == 35)*round(594.00/days,2) + \
-												(days == 36)*round(633.60/days,2) + \
-												(days == 37)*round(673.20/days,2) + \
-												(days == 38)*round(712.80/days,2) + \
-												(days == 39)*round(752.40/days,2) + \
-												(days == 40)*round(792.00/days,2) + \
-												(days == 41)*round(792.00/days,2) + \
-												(days == 64)*round(950.40/days,2)
+												(30 < days <= 40)*39.60 + \
+												(40 < days <= 60)*round(792.00/days,2) + \
+												(60 < days <= 70)*39.60 + \
+												(70 < days <= 80)*round(1188.00/days,2)
 												,
 
 
@@ -125,18 +118,6 @@ class ModelTransformer(BaseEstimator, TransformerMixin):
 	def transform(self, X, **kwargs):
 		return self.model.predict(X)
 
-class ColumnAsIs(BaseEstimator, TransformerMixin):
-
-	"""
-	does nothing, simply returns a column
-	"""
-
-	def transform(self, X):
-		return X
-
-	def fit(self, X, y=None):
-		return self
-
 class CountryIsLeftHand(BaseEstimator, TransformerMixin):
 
 	"""
@@ -208,47 +189,41 @@ class DataLoader:
 
 	def __init__(self):
 
-		"""
-		"""
+		self.target_col = 'isBooking'
+		self.train_test_col = 'CreatedLast30Day'
+		self.feat_cols = """FromDayWeek ToDayWeek Cancelled DurationDays UpfrontDays QuoteWeek QuoteDay 
+						QuoteHour QuoteMonth TotalUSD isCar is4x4 isCamper	
+						isMinibus isMotorHome LanguageCode CurrencyCode ToCountry	
+						PerdayUSD ResCountry PrevBks PrevQts PrevCnc PrevActBooking	
+						FirstActBooking PrevActThisCnt BeforeActThisCnt BeforeTotalCnt	
+						BeforeTotalCurrs BeforeTotalLangs""".split()
 
-	def load(self, file='rc_features_17JAN2020.csv', countries=None):
+	def load(self, file=None, 
+					residence_countries=None, 
+					destination_countries=None):
 
 		self.data = pd.read_csv('data/' + file, 
 								dtype={'TotalUSD': float, 
-										'Total': float},
-								keep_default_na=False, na_values='') 
+										'PerdayUSD': float},
+										keep_default_na=False) # to fix the Namibia issue
 
-		if countries:
+		assert self.target_col in self.data.columns, 'target column is missing!'
+		assert self.train_test_col in self.data.columns, 'custom split column is missing!'
 
-			print(f'--- customers from {", ".join(countries)} ---')
-			self.data = self.data[self.data['ResCountry'].isin(countries)]
-
-
-		target_col = 'isBooking'
-		train_test_col = 'CreatedLast30Days'
-
-		drop_cols = 'CustomerId Reference CreatedOn CreatedYear'.split()
-		feat_cols = set(self.data.columns) - set(drop_cols) - {target_col} - {train_test_col}
-
-		refs_test = set(self.data[self.data[train_test_col] == 1]['Reference'])
-		refs_train = set(self.data[self.data[train_test_col] == 0]['Reference'])
-
-		# last 30 days of data go into a test set
-		self.X_test = self.data[self.data['Reference'].isin(refs_test)][feat_cols]
-		self.y_test = self.data[self.data['Reference'].isin(refs_test)][target_col]
-
-		# the rest of the dataset is for training (train + validation)
-		self.data = self.data[self.data['Reference'].isin(refs_train)]
-		
 		self.data = self.data.drop_duplicates(['CustomerId', 'Reference'])
 
-		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
-										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
+		if not (set(self.feat_cols) < set(self.data)):
+			raise ValueError('some feature columns are missing!')
 
-		self.data['savings'] =  (self.data[['ToCountry', 'DurationDays']] \
-								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
-								.where(lambda _: _.notnull(), self.data['TotalUSD']*1.5) -  self.data['TotalUSD']) \
-								.apply(lambda x: round(max(x,0),2))
+		if residence_countries:
+
+			print(f'--- customers from {", ".join(residence_countries)} ---')
+			self.data = self.data[self.data['ResCountry'].isin(residence_countries)]
+
+		if destination_countries:
+
+			print(f'--- customers traveling to {", ".join(destination_countries)} ---')
+			self.data = self.data[self.data['ToCountry'].isin(destination_countries)]
 
 		self.data_summary = {'rows': len(self.data), 
 							 'cids': self.data['CustomerId'].nunique(),
@@ -261,19 +236,34 @@ class DataLoader:
 		for _ in self.data_summary:
 			print(f'{_}: {self.data_summary[_]:,}')
 
-		self.data = self.data.drop(drop_cols, axis=1).fillna(0)
-		# self.test = self.test.drop(drop_cols, axis=1).fillna(0)
+		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
+										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
+
+		self.data['savings'] =  (self.data[['ToCountry', 'DurationDays']] \
+								.apply(lambda _: competitors_price(company=None, country=_[0], days=_[1]), axis=1) \
+								.where(lambda _: _.notnull(), self.data['TotalUSD']*1.5) -  self.data['TotalUSD']) \
+								.apply(lambda x: round(max(x,0),2))
+
+
+		refs_test = set(self.data[self.data[self.train_test_col] == 'TEST']['Reference'])
+		refs_train = set(self.data[self.data[self.train_test_col] == 'UNASSIGNED']['Reference'])
+
+		# last 30 days of data go into a test set
+		self.X_test = self.data[self.data['Reference'].isin(refs_test)][self.feat_cols + ['dest_popul', 'savings']]
+		self.y_test = self.data[self.data['Reference'].isin(refs_test)][self.target_col]
+
+		# last 30 days of data go into a test set
+		self.X_train = self.data[self.data['Reference'].isin(refs_train)][self.feat_cols + ['dest_popul', 'savings']]
+		self.y_train = self.data[self.data['Reference'].isin(refs_train)][self.target_col]
 
 		return self
 
 if __name__ == '__main__':
 	
-	dl = DataLoader().load(file='RCB2C_features_20JAN2020.csv', countries=['GB'])
+	dl = DataLoader().load(file='RCB2C_features_20JAN2020.csv', residence_countries=['GB'])
 
-	X = dl.data[[c for c in dl.data.columns if c != 'isBooking']]
-	y = dl.data['isBooking'].values
-
-	X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.26, random_state=278, stratify=y)
+	X_train, X_val, y_train, y_val = train_test_split(dl.X_train, dl.y_train, 
+											test_size=0.26, random_state=278, stratify=dl.y_train)
 
 	print(f'bookings in training/test set {sum(y_train):,}/{sum(y_val):,}')
 	print(f'quotes in training/test set {len(y_train) - sum(y_train):,}/{len(y_val) - sum(y_val):,}')
@@ -281,8 +271,8 @@ if __name__ == '__main__':
 	features_std = FeatureUnion([
 										 
 								('ct', ColumnTransformer([('trip_details', 
-																ColumnAsIs(), 
-																['DurationDays', 'UpfrontDays', 'Cancelled']),
+															'passthrough', 
+															['DurationDays', 'UpfrontDays', 'Cancelled']),
 														  ('quote_month', 
 																OneHotEncoder(handle_unknown='ignore'), 
 																['QuoteMonth']),
@@ -317,13 +307,13 @@ if __name__ == '__main__':
 																TopTouristDestination(),
 																['ToCountry']),
 														  ('vehicle_type', 
-																ColumnAsIs(), 
+																'passthrough', 
 																['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']),
 														  ('dest_popul', 
 																ColumnAsIs(), 
 																['dest_popul']),
 														  ('prev_activities', 
-																ColumnAsIs(), 
+																'passthrough', 
 																['PrevBks', 'PrevQts', 'PrevCnc',
        															  'BeforeActThisCnt', 'PerdayUSD',
        															 'BeforeTotalCnt', 'BeforeTotalCurrs', 'BeforeTotalLangs']),
@@ -335,9 +325,9 @@ if __name__ == '__main__':
 														  ('payment_details',
 														  		Normalizer(),
 																['TotalUSD']),
-														  ('payment_details_local',
-														  		Normalizer(),
-																['Total']),
+														  # ('payment_details_local',
+														  # 		Normalizer(),
+																# ['Total']),
 														  ('savings', 
 																ColumnAsIs(), 
 																['savings'])
@@ -365,7 +355,7 @@ if __name__ == '__main__':
 
 	pars = {'cls__n_estimators': (200, 300),
 			'cls__max_depth': (2,3),
-			'feat_select__k': (10,20,50)}
+			'feat_select__k': (10,20)}
 
 	# # grid_search = GridSearchCV(pp, pars, n_jobs=2, verbose=1, cv=4)
 
