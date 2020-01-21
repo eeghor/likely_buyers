@@ -236,6 +236,9 @@ class DataLoader:
 		for _ in self.data_summary:
 			print(f'{_}: {self.data_summary[_]:,}')
 
+		self.data = self.data.join(country_info.set_index('iso_code')['arrivals_m spend_usd spend_pp_usd tourism_pct death_rate lh_driving'.split()], 
+			on='ToCountry', how='left').fillna(0)
+
 		self.data['dest_popul'] = self.data[['ResCountry', 'ToCountry']] \
 										.apply(lambda x: outbound_trips[x[0]].get(x[1], 0) if x[0] in outbound_trips else 0, axis=1)
 
@@ -249,11 +252,11 @@ class DataLoader:
 		refs_train = set(self.data[self.data[self.train_test_col] == 'UNASSIGNED']['Reference'])
 
 		# last 30 days of data go into a test set
-		self.X_test = self.data[self.data['Reference'].isin(refs_test)][self.feat_cols + ['dest_popul', 'savings']]
+		self.X_test = self.data[self.data['Reference'].isin(refs_test)][self.feat_cols + ['dest_popul', 'savings', 'tourism_pct']]
 		self.y_test = self.data[self.data['Reference'].isin(refs_test)][self.target_col]
 
 		# last 30 days of data go into a test set
-		self.X_train = self.data[self.data['Reference'].isin(refs_train)][self.feat_cols + ['dest_popul', 'savings']]
+		self.X_train = self.data[self.data['Reference'].isin(refs_train)][self.feat_cols + ['dest_popul', 'savings', 'tourism_pct']]
 		self.y_train = self.data[self.data['Reference'].isin(refs_train)][self.target_col]
 
 		return self
@@ -273,6 +276,9 @@ if __name__ == '__main__':
 								('ct', ColumnTransformer([('trip_details', 
 															'passthrough', 
 															['DurationDays', 'UpfrontDays', 'Cancelled']),
+														  ('tourism_efffec',
+														  	Normalizer(),
+														  	['tourism_pct']),
 														  ('quote_month', 
 																OneHotEncoder(handle_unknown='ignore'), 
 																['QuoteMonth']),
@@ -297,6 +303,9 @@ if __name__ == '__main__':
 														  ('webs_lang',
 																OneHotEncoder(handle_unknown='ignore'),
 																['LanguageCode']),
+														  # ('country_info',
+																# DestinationCountryInfo(),
+																# ['ToCountry']),
 														  ('rescountry_lefthand',
 																CountryIsLeftHand(),
 																['ResCountry']),
@@ -310,7 +319,7 @@ if __name__ == '__main__':
 																'passthrough', 
 																['isCar', 'is4x4', 'isCamper', 'isMinibus', 'isMotorHome']),
 														  ('dest_popul', 
-																ColumnAsIs(), 
+																'passthrough', 
 																['dest_popul']),
 														  ('prev_activities', 
 																'passthrough', 
@@ -329,7 +338,7 @@ if __name__ == '__main__':
 														  # 		Normalizer(),
 																# ['Total']),
 														  ('savings', 
-																ColumnAsIs(), 
+																'passthrough', 
 																['savings'])
 														]))
 								])
