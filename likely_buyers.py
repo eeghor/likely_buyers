@@ -256,6 +256,7 @@ class DataLoader:
 		self.X_test = self.data[self.data['Reference'].isin(refs_test)][self.feat_cols + ['dest_popul', 'savings', 'tourism_pct']]
 		self.y_test = self.data[self.data['Reference'].isin(refs_test)][self.target_col]
 
+
 		# last 30 days of data go into a test set
 		self.X_train = self.data[self.data['Reference'].isin(refs_train)][self.feat_cols + ['dest_popul', 'savings', 'tourism_pct']]
 		self.y_train = self.data[self.data['Reference'].isin(refs_train)][self.target_col]
